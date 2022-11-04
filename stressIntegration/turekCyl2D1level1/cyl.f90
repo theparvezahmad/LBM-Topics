@@ -5,6 +5,7 @@ program cyl
 
   integer, parameter:: &
     chanH_ = 82, &
+    dim = 2, &
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
@@ -25,18 +26,38 @@ program cyl
 
   double precision, parameter:: &
     d0 = 0.0d0, &
+    d1 = 1.0d0, &
+    d2 = 2.0d0, &
+    haf = 0.5d0, &
+    one6th = 1.0d0/6.0d0, &
     pi = 4.0d0*datan(1.0d0), &
     one36th = 1.0d0/36.0d0
 
+  type doublet_t
+    double precision::x, y
+  end type doublet_t
+
+  type doublet3_t
+    double precision::x, y
+    type(doublet_t)::fluidNode(2)
+    logical:: isInside
+  end type doublet3_t
+
+  type custom_t
+    type(doublet_t)::Pt, unitVec
+    type(doublet3_t)::box(4)
+  end type custom_t
+
+  type(custom_t), allocatable, dimension(:)::ptOnCircle
   integer::nx, ny
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t
+  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau
   integer:: i, j, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
   double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy
-  integer, dimension(0:q - 1):: ex, ey, kb
+  integer, dimension(0:q - 1):: ex, ey, kb, ci(0:q - 1, 2)
   double precision, allocatable, dimension(:, :, :):: f, ft
   double precision, allocatable, dimension(:, :):: ux, uy, rho
   logical::isCyl, isBar
@@ -66,7 +87,7 @@ program cyl
   nu_ = nu/Cnu
   uMean_ = uMean/CVel
   tau = 3*nu_ + 0.5d0
-  sNu = 1.0d0/tau
+  invTau = 1.0d0/tau
 
   write (*, *) 'Clen = ', Clen
   write (*, *) 'Crho = ', Crho
@@ -76,7 +97,7 @@ program cyl
   write (*, *) 'uMax_ = ', 1.5d0*uMean_
   write (*, *) 'Re_SI = ', uMean*dia/nu
   write (*, *) 'Re_LBM = ', uMean_*dia_/nu_
-  write (*, *) 'Aborted for Checking'; stop
+  ! write (*, *) 'Aborted for Checking'; stop
 !----------------------------------------------------------------------
   allocate (isn(nx + 2, ny + 2))
   allocate (ux(nx + 2, ny + 2))
@@ -152,6 +173,8 @@ program cyl
 
     end do
   end do
+
+  call createDataStructOnCircle(16, ptOnCircle)
 !----------------------------------------------------------------------
   do t_ = 0, time_
 
@@ -163,28 +186,15 @@ program cyl
         tmp1 = d0
         tmp2 = d0
         tmp3 = d0
-        pxx = d0
-        pxy = d0
         do a = 0, q - 1
           tmp1 = tmp1 + f(a, i, j)
           tmp2 = tmp2 + f(a, i, j)*ex(a)
           tmp3 = tmp3 + f(a, i, j)*ey(a)
-          pxx(i, j) = pxx(i, j) + f(a, i, j)*(ex(a)**2.0d0 - ey(a)**2.0d0)
-          pxy(i, j) = pxy(i, j) + f(a, i, j)*(ex(a)*ey(a))
         end do
 
         rho(i, j) = tmp1
         ux(i, j) = tmp2/tmp1
         uy(i, j) = tmp3/tmp1
-        ! dudx(i, j) = 0.75d0*sNu*(ux(i, j)**2.0d0 - uy(i, j)**2.0d0 - pxx(i, j)/rho(i, j))
-        ! dvdy(i, j) = 0.75d0*sNu*(uy(i, j)**2.0d0 - ux(i, j)**2.0d0 + pxx(i, j)/rho(i, j))
-        ! dudyPdvdx(i, j) = 3.0d0*sNu*ux(i, j)*uy(i, j) - pxy(i, j)/rho(i, j)
-
-        S11(i, j) = -1.0d0/3.0d0*rho(i, j) + 0.75d0*sNu*(ux(i, j)**2.0d0 - uy(i, j)**2.0d0 - pxx(i, j)/rho(i, j))
-        ! S12(i, j) = 0.5d0*dudyPdvdx(i, j)
-        S12(i, j) = 0.5d0*3.0d0*sNu*ux(i, j)*uy(i, j) - pxy(i, j)/rho(i, j)
-        ! S21(i, j) = 0.5d0*dudyPdvdx(i, j)
-        S22(i, j) = -1.0d0/3.0d0*rho(i, j) + 0.75d0*sNu*(uy(i, j)**2.0d0 - ux(i, j)**2.0d0 + pxx(i, j)/rho(i, j))
 
         rhoSum = rhoSum + tmp1
       end do
@@ -398,9 +408,9 @@ contains
 
     double precision, dimension(:), intent(in) :: f
     double precision, dimension(2, 2), intent(out) ::  sigma
-    double precision:: u(2), tmp(2)
+    double precision:: u(2), tmp(2), rho
 
-    tmp = zero
+    tmp = d0
     do a = 0, q - 1
       tmp(1) = tmp(1) + f(i)
       tmp(2) = tmp(2) + f(i)*ex(a)
@@ -414,12 +424,12 @@ contains
     do i = 1, 2
       do j = 1, 2
 
-        tmp(1) = zero
+        tmp(1) = d0
         do a = 0, q - 1
           tmp(1) = tmp(1) + (ci(a, i) - u(i))*(ci(a, j) - u(j))*f(a)
         end do
 
-        sigma(i, j) = -one6th*invTau*rho*kdf(i, j) - (one - haf*invTau)*tmp(1)
+        sigma(i, j) = -one6th*invTau*rho*kdf(i, j) - (d1 - haf*invTau)*tmp(1)
 
       end do
     end do
@@ -436,6 +446,62 @@ contains
       retval = 0
     end if
   end function kdf
+
+  subroutine createDataStructOnCircle(noOfPts, ptOnCircle)
+    integer, intent(in) :: noOfPts
+    type(custom_t), allocatable, dimension(:), intent(out)::ptOnCircle
+    double precision::theta0, theta, dTheta, dirDotUnitVec(q - 1)
+    integer::i, k, a, outDir, itmp(1)
+    allocate (ptOnCircle(noOfPts))
+
+    theta0 = d0
+    dTheta = 2*pi/noOfPts
+
+    do i = 0, noOfPts - 1
+      theta = theta0 + i*dTheta
+      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*dia_*cos(theta)
+      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*dia_*sin(theta)
+
+      ptOnCircle(i + 1)%unitVec%x = cos(theta)
+      ptOnCircle(i + 1)%unitVec%y = sin(theta)
+
+      associate (locBox => ptOnCircle(i + 1)%box)
+        locBox(1)%x = ceiling(ptOnCircle(i + 1)%Pt%x)
+        locBox(2)%x = ceiling(ptOnCircle(i + 1)%Pt%x)
+        locBox(3)%x = floor(ptOnCircle(i + 1)%Pt%x)
+        locBox(4)%x = floor(ptOnCircle(i + 1)%Pt%x)
+
+        locBox(1)%y = floor(ptOnCircle(i + 1)%Pt%y)
+        locBox(2)%y = ceiling(ptOnCircle(i + 1)%Pt%y)
+        locBox(3)%y = ceiling(ptOnCircle(i + 1)%Pt%y)
+        locBox(4)%y = floor(ptOnCircle(i + 1)%Pt%y)
+
+        do a = 1, q - 1
+          dirDotUnitVec(a) = (ci(a, 1)*ptOnCircle(i + 1)%unitVec%x + ci(a, 2)*ptOnCircle(i + 1)%unitVec%y) &
+                             /(sqrt(ci(a, 1)**d2 + ci(a, 2)**d2))
+        end do
+
+        itmp = maxloc(dirDotUnitVec)!, mask=dirDotUnitVec .gt. d0)
+        outDir = itmp(1)
+        write (*, *) outDir
+
+        do k = 1, 4
+          locBox(k)%isInside = ((locBox(k)%x - xc_)**2.0 + (locBox(k)%y - yc_)**2.0)**0.5 .le. 0.5*dia_
+
+          if (locBox(k)%isInside) then
+            locBox(k)%fluidNode(1)%x = locBox(k)%x + ci(outDir, 1)
+            locBox(k)%fluidNode(1)%y = locBox(k)%y + ci(outDir, 2)
+            locBox(k)%fluidNode(2)%x = locBox(k)%x + 2*ci(outDir, 1)
+            locBox(k)%fluidNode(2)%y = locBox(k)%y + 2*ci(outDir, 2)
+          end if
+
+        end do
+
+      end associate
+
+    end do
+
+  end subroutine createDataStructOnCircle
 
   function dateTime()
 
