@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run GDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceRoot}/stressIntegration/turekCyl2D1level1/test2d1l1.x",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceRoot}/stressIntegration/turekCyl2D1level1",
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "make",
+    }
+  ]
+}
