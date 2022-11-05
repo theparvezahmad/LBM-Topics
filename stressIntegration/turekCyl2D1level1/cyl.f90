@@ -41,8 +41,8 @@ program cyl
     double precision::x, y, z(0:q - 1)
   end type triplet_t
 
-  type doublet3_t
-    double precision::x, y, z(0:q - 1)
+  type, extends(triplet_t):: doublet3_t
+    ! double precision::x, y, z(0:q - 1)
     type(triplet_t)::fluidNode(2)
     logical:: isInside
   end type doublet3_t
