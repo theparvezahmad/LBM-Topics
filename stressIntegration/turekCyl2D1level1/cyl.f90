@@ -37,22 +37,29 @@ program cyl
     double precision::x, y
   end type doublet_t
 
+  type triplet_t
+    double precision::x, y, z(0:q - 1)
+  end type triplet_t
+
   type doublet3_t
-    double precision::x, y
-    type(doublet_t)::fluidNode(2)
+    double precision::x, y, z(0:q - 1)
+    type(triplet_t)::fluidNode(2)
     logical:: isInside
   end type doublet3_t
 
   type custom_t
-    type(doublet_t)::Pt, unitVec
+    type(doublet_t)::unitVec, force
+    type(triplet_t)::Pt
     type(doublet3_t)::box(4)
   end type custom_t
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle
+  ! type(triplet_t)::dataSet(2), askPoint
+  type(doublet_t)::totalForce
   integer::nx, ny
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau
-  integer:: i, j, a, a1, t_, ia, ja, solnumber
+  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
+  integer:: i, j, k, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
@@ -332,6 +339,39 @@ program cyl
     !    f(7, i, j) = f(5, i, j) + 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*ux(i, j))
     ! end do
 !----------------------------------------------------------------------
+!=================working================================
+    do i = 1, size(ptOnCircle)
+      do k = 1, 4
+
+        associate (lf => ptOnCircle(i)%box(k)%fluidNode, &
+                   lb => ptOnCircle(i)%box(k))
+
+          if (lb%isInside) then
+            lf(1)%z = f(:, lf(1)%x, lf(1)%y)
+            lf(2)%z = f(:, lf(2)%x, lf(2)%y)
+            lb%z = linearExterp(lb%x, lb%y, lf)
+          else
+            lb%z = f(:, lb%x, lb%y)
+          end if
+
+        end associate
+
+      end do
+
+      ptOnCircle(i)%Pt%z = bilinearInterp(ptOnCircle(i)%Pt%x, ptOnCircle(i)%Pt%y, ptOnCircle(i)%box)
+      call calcStressTensor(ptOnCircle(i)%Pt%z, sigma)
+      ptOnCircle(i)%force = mulMatVec(sigma, ptOnCircle(i)%unitVec)
+
+    end do
+
+    totalForce = integrate(ptOnCircle%force)
+
+    write (*, *) '======================================'
+    write (*, *) (ptOnCircle%Pt)
+    stop
+
+!=================working================================
+
     fx(2) = d0
     fy(2) = d0
     do i = 2, nx + 1 !BC
@@ -483,7 +523,7 @@ contains
 
         itmp = maxloc(dirDotUnitVec)!, mask=dirDotUnitVec .gt. d0)
         outDir = itmp(1)
-        write (*, *) outDir
+        ! write (*, *) outDir
 
         do k = 1, 4
           locBox(k)%isInside = ((locBox(k)%x - xc_)**2.0 + (locBox(k)%y - yc_)**2.0)**0.5 .le. 0.5*dia_
