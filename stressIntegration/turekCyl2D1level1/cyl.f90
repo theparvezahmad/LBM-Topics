@@ -9,7 +9,8 @@ program cyl
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
-    dispFreq = 1
+    dispFreq = 1, &
+    noOfPtOnCircle = 16
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -30,7 +31,7 @@ program cyl
     d2 = 2.0d0, &
     haf = 0.5d0, &
     one6th = 1.0d0/6.0d0, &
-    pi = 4.0d0*datan(1.0d0), &
+    pi = 4.0d0*atan(1.0d0), &
     one36th = 1.0d0/36.0d0
 
   type doublet_t
@@ -54,14 +55,13 @@ program cyl
   end type custom_t
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle
-  ! type(triplet_t)::dataSet(2), askPoint
   type(doublet_t)::totalForce
   integer::nx, ny
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
   integer:: i, j, k, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
-  double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl
+  double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
   double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy
   integer, dimension(0:q - 1):: ex, ey, kb, ci(0:q - 1, 2)
@@ -154,7 +154,7 @@ program cyl
   fx(1) = d0
   fy(1) = d0
   open (unit=10, file="tRhoCdCl.dat")
-  write (10, *) "Variables=timeLBM,timeReal,rho,Cd,Cl"
+  write (10, *) "Variables=timeLBM,timeReal,rho,Cd,Cl,Cd2,Cl2"
   ! open (unit=11, file="VelSig.dat")
 !----------------------------------------------------------------------
   do i = 1, nx + 1
@@ -181,7 +181,7 @@ program cyl
     end do
   end do
 
-  call createDataStructOnCircle(16, ptOnCircle)
+  call createDataStructOnCircle(noOfPtOnCircle, ptOnCircle)
 !----------------------------------------------------------------------
   do t_ = 0, time_
 
@@ -340,25 +340,25 @@ program cyl
     ! end do
 !----------------------------------------------------------------------
 !=================working================================
+    write (*, *) size(ptOnCircle)
     do i = 1, size(ptOnCircle)
       do k = 1, 4
 
-        associate (lf => ptOnCircle(i)%box(k)%fluidNode, &
-                   lb => ptOnCircle(i)%box(k))
+        associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
 
-          lf(1)%x = 45.0d0
-          lf(1)%y = 45.0d0
-          lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+          ! lf(1)%x = 45.0d0
+          ! lf(1)%y = 45.0d0
+          ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
 
-          lf(2)%x = 45.0d0
-          lf(2)%y = 44.0d0
-          lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
+          ! lf(2)%x = 45.0d0
+          ! lf(2)%y = 44.0d0
+          ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
 
-          lb%x = 45.0d0
-          lb%y = 46.0d0
-          call linearExterp(lb, lf)
-          write (*, *) "Hello", lb%z
-          stop
+          ! lb%x = 45.0d0
+          ! lb%y = 46.0d0
+          ! call linearExterp(lb, lf)
+          ! write (*, *) "Hello", lb%z
+          ! stop
 
           if (lb%isInside) then
             lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
@@ -372,18 +372,32 @@ program cyl
 
       end do
 
-      ! ptOnCircle(i)%Pt%z = bilinearInterp(ptOnCircle(i)%Pt%x, ptOnCircle(i)%Pt%y, ptOnCircle(i)%box)
+      ! ptOnCircle(1)%box(1)%z = [10.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(2)%z = [20.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(3)%z = [30.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(4)%z = [40.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ! ptOnCircle(1)%Pt%x = 51
+      ! ! ptOnCircle(1)%Pt%y = 42
+      ! call bilinearInterp(ptOnCircle(1)%Pt, ptOnCircle(1)%box)
+      ! write (*, *) ptOnCircle(1)%Pt%x
+      ! write (*, *) ptOnCircle(1)%Pt%y
+      ! write (*, *) ptOnCircle(1)%Pt%z
+      ! stop
+
+      call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
+
       call calcStressTensor(ptOnCircle(i)%Pt%z, sigma)
       ptOnCircle(i)%force%x = sigma(1, 1)*ptOnCircle(i)%unitVec%x + sigma(1, 2)*ptOnCircle(i)%unitVec%y
       ptOnCircle(i)%force%y = sigma(2, 1)*ptOnCircle(i)%unitVec%x + sigma(2, 2)*ptOnCircle(i)%unitVec%y
 
     end do
 
-    ! totalForce = integrate(ptOnCircle%force)
+    totalForce%x = trapIntegrate(ptOnCircle%force%x)
+    totalForce%y = trapIntegrate(ptOnCircle%force%y)
 
-    write (*, *) '======================================'
-    write (*, *) (ptOnCircle%Pt)
-    stop
+    ! write (*, *) '======================================'
+    ! write (*, *) (ptOnCircle%Pt)
+    ! stop
 
 !=================working================================
 
@@ -419,10 +433,13 @@ program cyl
     ! Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
     ! Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
-      write (10, '(E16.6,2X,I10,3(2X,E12.4))') t, t_, rhoSum, Cd, Cl
+      write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
+      write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
 
       !write (11, '(I8,6(3X,F10.6))') ts, ux(150, 201), uy(150, 201), ux(200, 250), uy(200, 250), ux(250, 201), uy(250, 201)
@@ -461,7 +478,7 @@ contains
   subroutine calcStressTensor(f, sigma)
     implicit none
 
-    double precision, dimension(:), intent(in) :: f
+    double precision, dimension(0:q - 1), intent(in) :: f
     double precision, dimension(2, 2), intent(out) ::  sigma
     double precision:: u(2), tmp(3), rho
 
@@ -642,11 +659,48 @@ contains
 
   end subroutine linearExterp
 
-  ! function dist(A, B) result(retval)
-  !   double precision, dimension(2), intent(in) :: A, B
-  !   double precision :: retval
+  subroutine bilinearInterp(pt, box)
+    type(triplet_t), intent(inout) :: pt
+    type(doublet3_t), intent(in) :: box(4)
+    double precision::locX, locY, coeff(4)
 
-  !   retval = sqrt((A(1) - B(1))**d2 + (A(2) - B(2))**d2)
-  ! end function dist
+    locX = pt%x - box(4)%x
+    locY = pt%y - box(4)%y
+    if (locX .gt. 1.0005 .or. locY .gt. 1.0005) then
+      write (*, *) "Bilinear Interpolation: Ask-point outside box. Aborting"
+      stop
+    end if
+    coeff = rectShape(locX, locY)
+
+    pt%z = 0
+    do i = 1, 4
+      pt%z = pt%z + coeff(i)*box(i)%z
+    end do
+
+  end subroutine bilinearInterp
+
+  function rectShape(x, y) result(psi)
+    implicit none
+
+    double precision, intent(in) :: x, y
+    double precision::psi(4)
+
+    psi = [x*(1 - y), x*y, (1 - x)*y, (1 - x)*(1 - y)]
+
+  end function rectShape
+
+  function trapIntegrate(force) result(totalForce)
+    implicit none
+    double precision, dimension(noOfPtOnCircle)::force
+    double precision::totalForce, dx
+
+    dx = pi*dia_/noOfPtOnCircle
+
+    totalForce = d0
+    do i = 1, noOfPtOnCircle - 1
+      totalForce = totalForce + haf*(force(i) + force(i + 1))*dx
+    end do
+
+  end function trapIntegrate
 
 end program cyl
