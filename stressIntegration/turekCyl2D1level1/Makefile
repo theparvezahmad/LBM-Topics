@@ -1,6 +1,7 @@
 FC=ifort #fortran compiler
 #FC=gfortran
-FFLAGS=-g -warn all -check all -traceback -stand f18 
+FFLAGS=
+#-g -warn all -check all -traceback -stand f18 
 #-mkl -fast
 #-warn all -check all -stand f18 
 # -g

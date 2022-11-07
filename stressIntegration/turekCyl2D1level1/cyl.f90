@@ -4,13 +4,13 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 82, &
+    chanH_ = 164, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
-    dispFreq = 1, &
-    noOfPtOnCircle = 16
+    dispFreq = 10, &
+    noOfPtOnCircle = 1000
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -340,7 +340,6 @@ program cyl
     ! end do
 !----------------------------------------------------------------------
 !=================working================================
-    write (*, *) size(ptOnCircle)
     do i = 1, size(ptOnCircle)
       do k = 1, 4
 
@@ -439,7 +438,7 @@ program cyl
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
       write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
-      write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
+      ! write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
 
       !write (11, '(I8,6(3X,F10.6))') ts, ux(150, 201), uy(150, 201), ux(200, 250), uy(200, 250), ux(250, 201), uy(250, 201)
@@ -481,12 +480,13 @@ contains
     double precision, dimension(0:q - 1), intent(in) :: f
     double precision, dimension(2, 2), intent(out) ::  sigma
     double precision:: u(2), tmp(3), rho
+    integer:: i, j, a
 
     tmp = d0
     do a = 0, q - 1
-      tmp(1) = tmp(1) + f(i)
-      tmp(2) = tmp(2) + f(i)*ex(a)
-      tmp(3) = tmp(3) + f(i)*ey(a)
+      tmp(1) = tmp(1) + f(a)
+      tmp(2) = tmp(2) + f(a)*ex(a)
+      tmp(3) = tmp(3) + f(a)*ey(a)
     end do
 
     rho = tmp(1)
@@ -663,6 +663,7 @@ contains
     type(triplet_t), intent(inout) :: pt
     type(doublet3_t), intent(in) :: box(4)
     double precision::locX, locY, coeff(4)
+    integer::i
 
     locX = pt%x - box(4)%x
     locY = pt%y - box(4)%y
@@ -693,6 +694,7 @@ contains
     implicit none
     double precision, dimension(noOfPtOnCircle)::force
     double precision::totalForce, dx
+    integer::i
 
     dx = pi*dia_/noOfPtOnCircle
 
