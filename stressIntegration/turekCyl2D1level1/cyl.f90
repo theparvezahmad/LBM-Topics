@@ -346,25 +346,40 @@ program cyl
         associate (lf => ptOnCircle(i)%box(k)%fluidNode, &
                    lb => ptOnCircle(i)%box(k))
 
+          lf(1)%x = 45.0d0
+          lf(1)%y = 45.0d0
+          lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+
+          lf(2)%x = 45.0d0
+          lf(2)%y = 44.0d0
+          lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
+
+          lb%x = 45.0d0
+          lb%y = 46.0d0
+          call linearExterp(lb, lf)
+          write (*, *) "Hello", lb%z
+          stop
+
           if (lb%isInside) then
-            lf(1)%z = f(:, lf(1)%x, lf(1)%y)
-            lf(2)%z = f(:, lf(2)%x, lf(2)%y)
-            lb%z = linearExterp(lb%x, lb%y, lf)
+            lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
+            lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
+            call linearExterp(lb, lf)
           else
-            lb%z = f(:, lb%x, lb%y)
+            lb%z = f(:, int(lb%x), int(lb%y))
           end if
 
         end associate
 
       end do
 
-      ptOnCircle(i)%Pt%z = bilinearInterp(ptOnCircle(i)%Pt%x, ptOnCircle(i)%Pt%y, ptOnCircle(i)%box)
+      ! ptOnCircle(i)%Pt%z = bilinearInterp(ptOnCircle(i)%Pt%x, ptOnCircle(i)%Pt%y, ptOnCircle(i)%box)
       call calcStressTensor(ptOnCircle(i)%Pt%z, sigma)
-      ptOnCircle(i)%force = mulMatVec(sigma, ptOnCircle(i)%unitVec)
+      ptOnCircle(i)%force%x = sigma(1, 1)*ptOnCircle(i)%unitVec%x + sigma(1, 2)*ptOnCircle(i)%unitVec%y
+      ptOnCircle(i)%force%y = sigma(2, 1)*ptOnCircle(i)%unitVec%x + sigma(2, 2)*ptOnCircle(i)%unitVec%y
 
     end do
 
-    totalForce = integrate(ptOnCircle%force)
+    ! totalForce = integrate(ptOnCircle%force)
 
     write (*, *) '======================================'
     write (*, *) (ptOnCircle%Pt)
@@ -448,7 +463,7 @@ contains
 
     double precision, dimension(:), intent(in) :: f
     double precision, dimension(2, 2), intent(out) ::  sigma
-    double precision:: u(2), tmp(2), rho
+    double precision:: u(2), tmp(3), rho
 
     tmp = d0
     do a = 0, q - 1
@@ -586,5 +601,52 @@ contains
     write (dateTime, '(i2,1x,a,1x,i4,2x,i2,a1,i2.2,a1,i2.2,a1,i3.3,1x,a)') &
       d, trim(month(m)), y, h, ':', n, ':', s, '.', mm, trim(ampm)
   end function dateTime
+
+  function mulMatVec(A, B)
+    implicit none
+
+    double precision, dimension(:, :), contiguous, intent(in)  :: A
+    double precision, dimension(:), contiguous, intent(in)  :: B
+    double precision, dimension(size(A, 1)) :: mulMatVec
+    integer :: i, k
+
+    if (size(A, 2) == size(B)) then
+      mulMatVec = 0.0d0
+      do k = 1, size(A, 2)
+        do i = 1, size(A, 1)
+          mulMatVec(i) = mulMatVec(i) + A(i, k)*B(k)
+        end do
+      end do
+    else
+      write (*, *) 'Incompatible Martix-Vector Multiplication'
+      stop
+    end if
+
+  end function mulMatVec
+
+  subroutine linearExterp(s, f)
+    ! double precision, intent(in) :: x, y
+    type(triplet_t), intent(in) ::  f(2)
+    type(doublet3_t), intent(inout) ::  s
+    double precision:: x0x1, x2x1
+
+    if (s%x /= f(1)%x) then
+      x0x1 = s%x - f(1)%x
+      x2x1 = f(2)%x - f(1)%x
+    else
+      x0x1 = s%y - f(1)%y
+      x2x1 = f(2)%y - f(1)%y
+    end if
+
+    s%z = f(1)%z + x0x1*(f(2)%z - f(1)%z)/x2x1
+
+  end subroutine linearExterp
+
+  ! function dist(A, B) result(retval)
+  !   double precision, dimension(2), intent(in) :: A, B
+  !   double precision :: retval
+
+  !   retval = sqrt((A(1) - B(1))**d2 + (A(2) - B(2))**d2)
+  ! end function dist
 
 end program cyl
