@@ -4,7 +4,7 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 164, &
+    chanH_ = 82, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
@@ -22,6 +22,7 @@ program cyl
     uMean = 0.2d0, &
     nu = 0.001d0, &
     dia = 0.1d0, &
+    diaNew = 1.32d0*0.1d0, &
     xc = 0.2d0, &
     yc = 0.2d0
 
@@ -34,6 +35,9 @@ program cyl
     pi = 4.0d0*atan(1.0d0), &
     one36th = 1.0d0/36.0d0
 
+  type lbmTriplet_t
+    double precision::r, u, v
+  end type lbmTriplet_t
   type doublet_t
     double precision::x, y
   end type doublet_t
@@ -42,22 +46,23 @@ program cyl
     double precision::x, y, z(0:q - 1)
   end type triplet_t
 
-  type, extends(triplet_t):: doublet3_t
+  type, extends(triplet_t):: box_t
     ! double precision::x, y, z(0:q - 1)
     type(triplet_t)::fluidNode(2)
     logical:: isInside
-  end type doublet3_t
+  end type box_t
 
   type custom_t
     type(doublet_t)::unitVec, force
     type(triplet_t)::Pt
-    type(doublet3_t)::box(4)
+    type(box_t)::box(4)
   end type custom_t
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle
   type(doublet_t)::totalForce
+  type(lbmTriplet_t)::onSurf
   integer::nx, ny
-  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
+  double precision:: nu_, uMean_, uPara_, uParaRamp_, diaNew_, dia_, xc_, yc_, chanL_, barL_, barH_
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
   integer:: i, j, k, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
@@ -85,6 +90,7 @@ program cyl
 !===Other LBM parameters===
   chanL_ = chanL/Clen
   dia_ = dia/Clen
+  diaNew_ = diaNew/Clen
   xc_ = xc/Clen + 1.5d0
   yc_ = yc/Clen + 1.5d0
   barL_ = barL/Clen
@@ -345,24 +351,24 @@ program cyl
 
         associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
 
-          ! lf(1)%x = 45.0d0
-          ! lf(1)%y = 45.0d0
-          ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-
           ! lf(2)%x = 45.0d0
           ! lf(2)%y = 44.0d0
           ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
 
+          ! lf(1)%x = 45.0d0
+          ! lf(1)%y = 45.0d0
+          ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+
           ! lb%x = 45.0d0
           ! lb%y = 46.0d0
-          ! call linearExterp(lb, lf)
+          ! call linearExterp(lb)
           ! write (*, *) "Hello", lb%z
           ! stop
 
           if (lb%isInside) then
             lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
             lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
-            call linearExterp(lb, lf)
+            call linearExterp(lb)
           else
             lb%z = f(:, int(lb%x), int(lb%y))
           end if
@@ -385,11 +391,18 @@ program cyl
 
       call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
 
-      call calcStressTensor(ptOnCircle(i)%Pt%z, sigma)
-      ptOnCircle(i)%force%x = sigma(1, 1)*ptOnCircle(i)%unitVec%x + sigma(1, 2)*ptOnCircle(i)%unitVec%y
-      ptOnCircle(i)%force%y = sigma(2, 1)*ptOnCircle(i)%unitVec%x + sigma(2, 2)*ptOnCircle(i)%unitVec%y
+      call calcStressTensor(ptOnCircle(i)%Pt%z, sigma, onSurf)
 
+      associate (uv => ptOnCircle(i)%unitVec)
+        ptOnCircle(i)%force%x = sigma(1, 1)*uv%x + sigma(1, 2)*uv%y - onSurf%r*onSurf%u*(onSurf%u*uv%x + onSurf%v*uv%y)
+        ptOnCircle(i)%force%y = sigma(2, 1)*uv%x + sigma(2, 2)*uv%y - onSurf%r*onSurf%v*(onSurf%u*uv%x + onSurf%v*uv%y)
+      end associate
     end do
+
+    ! ptOnCircle%force%x = 1.75
+    ! write (*, *) dia_
+    ! write (*, *) trapIntegrate(ptOnCircle%force%x)
+    ! stop
 
     totalForce%x = trapIntegrate(ptOnCircle%force%x)
     totalForce%y = trapIntegrate(ptOnCircle%force%y)
@@ -432,9 +445,9 @@ program cyl
     ! Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
     ! Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*diaNew_)
     Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*diaNew_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
       write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
@@ -474,11 +487,12 @@ program cyl
   write (*, *) '======================================================'
 contains
 
-  subroutine calcStressTensor(f, sigma)
+  subroutine calcStressTensor(f, sigma, OnSurf)
     implicit none
 
     double precision, dimension(0:q - 1), intent(in) :: f
-    double precision, dimension(2, 2), intent(out) ::  sigma
+    double precision, intent(out) ::  sigma(2, 2)
+    type(lbmTriplet_t), intent(out) :: onSurf
     double precision:: u(2), tmp(3), rho
     integer:: i, j, a
 
@@ -492,6 +506,10 @@ contains
     rho = tmp(1)
     u(1) = tmp(2)/rho
     u(2) = tmp(3)/rho
+
+    onSurf%r = rho
+    onSurf%u = u(1)
+    onSurf%v = u(2)
 
     do i = 1, 2
       do j = 1, 2
@@ -531,8 +549,8 @@ contains
 
     do i = 0, noOfPts - 1
       theta = theta0 + i*dTheta
-      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*dia_*cos(theta)
-      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*dia_*sin(theta)
+      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*diaNew_*cos(theta)
+      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*diaNew_*sin(theta)
 
       ptOnCircle(i + 1)%unitVec%x = cos(theta)
       ptOnCircle(i + 1)%unitVec%y = sin(theta)
@@ -553,12 +571,12 @@ contains
                              /(sqrt(ci(a, 1)**d2 + ci(a, 2)**d2))
         end do
 
-        itmp = maxloc(dirDotUnitVec)!, mask=dirDotUnitVec .gt. d0)
+        itmp = maxloc(dirDotUnitVec)
         outDir = itmp(1)
         ! write (*, *) outDir
 
         do k = 1, 4
-          locBox(k)%isInside = ((locBox(k)%x - xc_)**2.0 + (locBox(k)%y - yc_)**2.0)**0.5 .le. 0.5*dia_
+          locBox(k)%isInside = ((locBox(k)%x - xc_)**d2 + (locBox(k)%y - yc_)**d2)**haf .le. haf*diaNew_
 
           if (locBox(k)%isInside) then
             locBox(k)%fluidNode(1)%x = locBox(k)%x + ci(outDir, 1)
@@ -641,27 +659,28 @@ contains
 
   end function mulMatVec
 
-  subroutine linearExterp(s, f)
+  subroutine linearExterp(b)
     ! double precision, intent(in) :: x, y
-    type(triplet_t), intent(in) ::  f(2)
-    type(doublet3_t), intent(inout) ::  s
+    type(box_t), intent(inout) ::  b
     double precision:: x0x1, x2x1
 
-    if (s%x /= f(1)%x) then
-      x0x1 = s%x - f(1)%x
+    associate (f => b%fluidNode)
+    if (b%x /= f(1)%x) then
+      x0x1 = b%x - f(1)%x
       x2x1 = f(2)%x - f(1)%x
     else
-      x0x1 = s%y - f(1)%y
+      x0x1 = b%y - f(1)%y
       x2x1 = f(2)%y - f(1)%y
     end if
 
-    s%z = f(1)%z + x0x1*(f(2)%z - f(1)%z)/x2x1
+    b%z = f(1)%z + x0x1*(f(2)%z - f(1)%z)/x2x1
+    end associate
 
   end subroutine linearExterp
 
   subroutine bilinearInterp(pt, box)
     type(triplet_t), intent(inout) :: pt
-    type(doublet3_t), intent(in) :: box(4)
+    type(box_t), intent(in) :: box(4)
     double precision::locX, locY, coeff(4)
     integer::i
 
@@ -694,13 +713,20 @@ contains
     implicit none
     double precision, dimension(noOfPtOnCircle)::force
     double precision::totalForce, dx
-    integer::i
+    integer::i, ip1
 
-    dx = pi*dia_/noOfPtOnCircle
+    dx = pi*diaNew_/noOfPtOnCircle
 
     totalForce = d0
-    do i = 1, noOfPtOnCircle - 1
-      totalForce = totalForce + haf*(force(i) + force(i + 1))*dx
+    do i = 1, noOfPtOnCircle
+
+      if (i == noOfPtOnCircle) then
+        ip1 = 1
+      else
+        ip1 = i + 1
+      end if
+
+      totalForce = totalForce + haf*(force(i) + force(ip1))*dx
     end do
 
   end function trapIntegrate
