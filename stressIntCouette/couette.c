@@ -20,7 +20,7 @@ int kdf(int i, int j);
 int main(void)
 {
   int i, j, a, a1, ts, ia, ja;
-  static double f[q][nx + 2][ny + 2], ft[q][nx + 2][ny + 2], wt[q], ux_a[ny + 2];
+  static double f[q][nx + 2][ny + 2], ft[q][nx + 2][ny + 2], wt[q], fneq[q], ux_a[ny + 2];
   static double ux[nx + 2][ny + 2], uy[nx + 2][ny + 2], rho[nx + 2][ny + 2], sigma[2][2], u[2];
   double tmp1, tmp2, tmp3, feq, rhoAvg;
   static int isn[nx + 2][ny + 2], ex[q], ey[q], kb[q], ci[q][2];
@@ -53,7 +53,7 @@ int main(void)
   ex[8] = 1;
   ey[8] = -1;
 
-  for (int a = 0; i < q; i++)
+  for (int a = 0; a < q; a++)
   {
     ci[a][0] = ex[a];
     ci[a][1] = ey[a];
@@ -216,23 +216,43 @@ int main(void)
       for (int jj = 0; jj < 2; jj++)
       {
 
-        tmp1 = 0.0;
         i = nx / 2;
-        j = 3 * ny / 4;
+        j = ny / 4;
         u[0] = ux[i][j];
         u[1] = uy[i][j];
 
         for (a = 0; a < q; a++)
         {
-          tmp1 = tmp1 + (ci[a][ii] - u[ii]) * (ci[a][jj] - u[jj]) * f[a][i][j];
+          tmp1 = ux[i][j] * ex[a] + uy[i][j] * ey[a];
+          tmp2 = ux[i][j] * ux[i][j] + uy[i][j] * uy[i][j];
+          feq = wt[a] * rho[i][j] * (1.0 + 3.0 * tmp1 + 4.5 * tmp1 * tmp1 - 1.5 * tmp2);
+          fneq[a] = f[a][i][j] - feq;
+          // printf("%d %10.6f\n", a, fneq[a]);
         }
 
-        sigma[ii][jj] = -(1.0 / 6.0) * invTau * rho[i][j] * kdf(ii, jj) - (1.0 - 0.5 * invTau) * tmp1;
+        // tmp1 = 0.0;
+        // for (a = 0; a < q; a++)
+        // {
+        //   tmp1 = tmp1 + (ci[a][ii] - u[ii]) * (ci[a][jj] - u[jj]) * f[a][i][j];
+        // }
+
+        // sigma[ii][jj] = -(1.0 / 6.0) * invTau * rho[i][j] * kdf(ii, jj) - (1.0 - 0.5 * invTau) * tmp1;
+
+        tmp1 = 0.0;
+        for (a = 0; a < q; a++)
+        {
+          tmp1 = tmp1 + fneq[a] * (ci[a][ii] * ci[a][jj]); // - 0.5 * (ci[a][0] * ci[a][0] + ci[a][1] * ci[a][1]) * kdf(ii, jj));
+        }
+
+        sigma[ii][jj] = (1.0 - 0.5 * invTau) * tmp1;
+
         // printf("%d %d %d %d", kdf(0, 0), kdf(0, 1), kdf(1, 0), kdf(1, 1));
         // return 0;
         // sigma[ii][jj] = -(1.0 - 0.5 * invTau) * tmp1;
       }
     }
+    sigma[0][0] = sigma[0][0] - (1.0 / 3.0) * rho[i][j];
+    sigma[1][1] = sigma[1][1] - (1.0 / 3.0) * rho[i][j];
     //----------------------------------------------------------------------
     if ((ts % dispFreq) == 0)
     {
