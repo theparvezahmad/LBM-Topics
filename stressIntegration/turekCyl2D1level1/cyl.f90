@@ -4,7 +4,7 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 82, &
+    chanH_ = 205, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
@@ -32,6 +32,7 @@ program cyl
     d2 = 2.0d0, &
     haf = 0.5d0, &
     one6th = 1.0d0/6.0d0, &
+    one3rd = 1.0d0/3.0d0, &
     pi = 4.0d0*atan(1.0d0), &
     one36th = 1.0d0/36.0d0
 
@@ -81,7 +82,7 @@ program cyl
 !===Conversion Factors===
   Clen = chanH/chanH_
   Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.0025d0
+  Ct = dia/uMean*0.00025d0
   Cnu = Clen**2.0d0/Ct
   CVel = Clen/Ct
   ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
@@ -391,11 +392,11 @@ program cyl
 
       call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
 
-      call calcStressTensor(ptOnCircle(i)%Pt%z, sigma, onSurf)
+      call calcStressTensor2(ptOnCircle(i)%Pt%z, sigma, onSurf)
 
       associate (uv => ptOnCircle(i)%unitVec)
-        ptOnCircle(i)%force%x = sigma(1, 1)*uv%x + sigma(1, 2)*uv%y - onSurf%r*onSurf%u*(onSurf%u*uv%x + onSurf%v*uv%y)
-        ptOnCircle(i)%force%y = sigma(2, 1)*uv%x + sigma(2, 2)*uv%y - onSurf%r*onSurf%v*(onSurf%u*uv%x + onSurf%v*uv%y)
+        ptOnCircle(i)%force%x = sigma(1, 1)*uv%x + sigma(1, 2)*uv%y! - onSurf%r*onSurf%u*(onSurf%u*uv%x + onSurf%v*uv%y)
+        ptOnCircle(i)%force%y = sigma(2, 1)*uv%x + sigma(2, 2)*uv%y! - onSurf%r*onSurf%v*(onSurf%u*uv%x + onSurf%v*uv%y)
       end associate
     end do
 
@@ -487,7 +488,7 @@ program cyl
   write (*, *) '======================================================'
 contains
 
-  subroutine calcStressTensor(f, sigma, OnSurf)
+  pure subroutine calcStressTensor(f, sigma, OnSurf)
     implicit none
 
     double precision, dimension(0:q - 1), intent(in) :: f
@@ -526,7 +527,80 @@ contains
 
   end subroutine calcStressTensor
 
-  function kdf(i, j) result(retval)
+  pure subroutine calcStressTensor2(f, sigma, lbmVar)
+    implicit none
+
+    double precision, dimension(0:q - 1), intent(in) :: f
+    double precision, intent(out) ::  sigma(2, 2)
+    type(lbmTriplet_t), intent(out) :: lbmVar
+
+    double precision, dimension(0:q - 1) :: feq, fneq
+    double precision:: tmp(3)
+    integer:: i, j, a
+
+    lbmVar = macroVar(f)
+
+    feq = eqDist(lbmVar)
+
+    fneq = f - feq
+
+    do i = 1, 2
+      do j = 1, 2
+
+        tmp(1) = d0
+        do a = 0, q - 1
+          tmp(1) = tmp(1) + fneq(a)*(ci(a, i)*ci(a, j) - haf*(ci(a, 1)*ci(a, 1) + ci(a, 2)*ci(a, 2))*kdf(i, j))
+        end do
+
+        sigma(i, j) = (d1 - haf*invTau)*tmp(1)
+
+      end do
+    end do
+
+    sigma(1, 1) = sigma(1, 1) - one3rd*lbmVar%r
+    sigma(2, 2) = sigma(2, 2) - one3rd*lbmVar%r
+
+  end subroutine calcStressTensor2
+
+  pure function eqDist(lbmVar) result(feq)
+    ! double precision, dimension(0:q - 1), intent(in) :: f
+    type(lbmTriplet_t), intent(in) :: lbmVar
+    double precision, dimension(0:q - 1) :: feq
+    integer:: a
+    double precision:: tmp1, tmp2
+
+    do a = 0, q - 1
+      tmp1 = lbmVar%u*ex(a) + lbmVar%v*ey(a)
+      tmp2 = lbmVar%u**d2 + lbmVar%v**d2
+      feq = wt(a)*lbmVar%r*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
+      ! ft(a) = f(a) - (f(a) - feq)/tau !collision
+    end do
+
+  end function eqDist
+
+  pure function macroVar(f) result(lbmVar)
+    implicit none
+
+    double precision, dimension(0:q - 1), intent(in) :: f
+    type(lbmTriplet_t) :: lbmVar
+
+    double precision:: tmp(3)
+    integer:: a
+
+    tmp = d0
+    do a = 0, q - 1
+      tmp(1) = tmp(1) + f(a)
+      tmp(2) = tmp(2) + f(a)*ex(a)
+      tmp(3) = tmp(3) + f(a)*ey(a)
+    end do
+
+    lbmVar%r = tmp(1)
+    lbmVar%u = tmp(2)/lbmVar%r
+    lbmVar%v = tmp(3)/lbmVar%r
+
+  end function macroVar
+
+  pure function kdf(i, j) result(retval)
     integer, intent(in) :: i, j
     integer :: retval
 
@@ -537,7 +611,7 @@ contains
     end if
   end function kdf
 
-  subroutine createDataStructOnCircle(noOfPts, ptOnCircle)
+  pure subroutine createDataStructOnCircle(noOfPts, ptOnCircle)
     integer, intent(in) :: noOfPts
     type(custom_t), allocatable, dimension(:), intent(out)::ptOnCircle
     double precision::theta0, theta, dTheta, dirDotUnitVec(q - 1)
@@ -637,29 +711,29 @@ contains
       d, trim(month(m)), y, h, ':', n, ':', s, '.', mm, trim(ampm)
   end function dateTime
 
-  function mulMatVec(A, B)
-    implicit none
+  ! function mulMatVec(A, B)
+  !   implicit none
 
-    double precision, dimension(:, :), contiguous, intent(in)  :: A
-    double precision, dimension(:), contiguous, intent(in)  :: B
-    double precision, dimension(size(A, 1)) :: mulMatVec
-    integer :: i, k
+  !   double precision, dimension(:, :), contiguous, intent(in)  :: A
+  !   double precision, dimension(:), contiguous, intent(in)  :: B
+  !   double precision, dimension(size(A, 1)) :: mulMatVec
+  !   integer :: i, k
 
-    if (size(A, 2) == size(B)) then
-      mulMatVec = 0.0d0
-      do k = 1, size(A, 2)
-        do i = 1, size(A, 1)
-          mulMatVec(i) = mulMatVec(i) + A(i, k)*B(k)
-        end do
-      end do
-    else
-      write (*, *) 'Incompatible Martix-Vector Multiplication'
-      stop
-    end if
+  !   if (size(A, 2) == size(B)) then
+  !     mulMatVec = 0.0d0
+  !     do k = 1, size(A, 2)
+  !       do i = 1, size(A, 1)
+  !         mulMatVec(i) = mulMatVec(i) + A(i, k)*B(k)
+  !       end do
+  !     end do
+  !   else
+  !     write (*, *) 'Incompatible Martix-Vector Multiplication'
+  !     stop
+  !   end if
 
-  end function mulMatVec
+  ! end function mulMatVec
 
-  subroutine linearExterp(b)
+  pure subroutine linearExterp(b)
     ! double precision, intent(in) :: x, y
     type(box_t), intent(inout) ::  b
     double precision:: x0x1, x2x1
@@ -678,18 +752,25 @@ contains
 
   end subroutine linearExterp
 
-  subroutine bilinearInterp(pt, box)
+  pure subroutine bilinearInterp(pt, box, err)
     type(triplet_t), intent(inout) :: pt
     type(box_t), intent(in) :: box(4)
+    integer, optional, intent(out) :: err
     double precision::locX, locY, coeff(4)
     integer::i
 
     locX = pt%x - box(4)%x
     locY = pt%y - box(4)%y
-    if (locX .gt. 1.0005 .or. locY .gt. 1.0005) then
-      write (*, *) "Bilinear Interpolation: Ask-point outside box. Aborting"
-      stop
+
+    if (present(err)) then
+      err = 0
+      if (locX .gt. 1.0005 .or. locY .gt. 1.0005) then
+        ! write (*, *) "Bilinear Interpolation: Ask-point outside box. Aborting"
+        ! stop
+        err = 1
+      end if
     end if
+
     coeff = rectShape(locX, locY)
 
     pt%z = 0
@@ -699,7 +780,7 @@ contains
 
   end subroutine bilinearInterp
 
-  function rectShape(x, y) result(psi)
+  pure function rectShape(x, y) result(psi)
     implicit none
 
     double precision, intent(in) :: x, y
@@ -709,9 +790,9 @@ contains
 
   end function rectShape
 
-  function trapIntegrate(force) result(totalForce)
+  pure function trapIntegrate(force) result(totalForce)
     implicit none
-    double precision, dimension(noOfPtOnCircle)::force
+    double precision, dimension(noOfPtOnCircle), intent(in)::force
     double precision::totalForce, dx
     integer::i, ip1
 
