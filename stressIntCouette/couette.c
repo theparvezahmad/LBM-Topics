@@ -7,9 +7,9 @@
 #define ny 30
 #define q 9
 //----------------------------------------------------------------------
-const int time = 10000;
+const int time = 20000;
 const int noOfSnaps = 5;
-const int dispFreq = 100;
+const int dispFreq = 1000;
 const double tau = 0.8;
 const double invTau = 1.0 / tau;
 const double rho0 = 1.0;
@@ -216,8 +216,8 @@ int main(void)
       for (int jj = 0; jj < 2; jj++)
       {
 
-        i = nx / 2;
-        j = ny / 4;
+        i = nx / 5;
+        j = 8 * ny / 10;
         u[0] = ux[i][j];
         u[1] = uy[i][j];
 
@@ -241,7 +241,7 @@ int main(void)
         tmp1 = 0.0;
         for (a = 0; a < q; a++)
         {
-          tmp1 = tmp1 + fneq[a] * (ci[a][ii] * ci[a][jj]); // - 0.5 * (ci[a][0] * ci[a][0] + ci[a][1] * ci[a][1]) * kdf(ii, jj));
+          tmp1 = tmp1 + fneq[a] * ((ci[a][ii] * ci[a][jj]) - 0.5 * (ci[a][0] * ci[a][0] + ci[a][1] * ci[a][1]) * kdf(ii, jj));
         }
 
         sigma[ii][jj] = (1.0 - 0.5 * invTau) * tmp1;
