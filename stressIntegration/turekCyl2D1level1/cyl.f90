@@ -2,6 +2,8 @@ program cyl
   implicit none
   !Real units are in SI units
   !Underscore Variables are in LBM units
+  logical, parameter:: &
+    isDebug = .true.
 
   integer, parameter:: &
     chanH_ = 82, &
@@ -22,7 +24,6 @@ program cyl
     uMean = 0.2d0, &
     nu = 0.001d0, &
     dia = 0.1d0, &
-    diaNew = 1.32d0*0.1d0, &
     xc = 0.2d0, &
     yc = 0.2d0
 
@@ -59,12 +60,24 @@ program cyl
     type(box_t)::box(4)
   end type custom_t
 
+  type cf_t
+    double precision:: length, rho, time, velocity, nu, force
+  end type
+
+  type si_lb_t
+    double precision:: channelHeight, channelLength, totalTime, diameter
+    double precision:: xCentre, yCentre, barHeight, barLength, meanVel, nu, tau
+  end type
+
+  type(cf_t)::cf
+  type(si_lb_t)::si, lb
   type(custom_t), allocatable, dimension(:)::ptOnCircle
   type(doublet_t)::totalForce
   type(lbmTriplet_t)::onSurf
+
   integer::nx, ny
-  double precision:: nu_, uMean_, uPara_, uParaRamp_, diaNew_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
+  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
+  double precision:: tau, t, invTau, sigma(2, 2)
   integer:: i, j, k, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
@@ -81,38 +94,27 @@ program cyl
   write (*, *) '======================================================'
   write (*, *) 'Program started at :', dateTime()
 !===Conversion Factors===
-  Clen = chanH/chanH_
-  Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.00025d0
-  Cnu = Clen**2.0d0/Ct
-  CVel = Clen/Ct
-  ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
-  CFor = Crho*Clen**3.0d0*Ct**(-2.0d0)
+  call calcConvFactor(cf)
+
+  ! if (isDebug) then
+  !   write (*, *) "Invoked calcConvFactor(cf)"
+  !   write (*, *) "cf.length=", cf%length
+  !   write (*, *) "cf.rho=", cf%rho
+  !   write (*, *) "cf.time=", cf%time
+  !   write (*, *) "cf.velocity=", cf%velocity
+  !   write (*, *) "cf.nu=", cf%nu
+  !   write (*, *) "cf.force=", cf%force
+  !   write (*, *) '------------------------------------------------------'
+  ! end if
 
 !===Other LBM parameters===
-  chanL_ = chanL/Clen
-  dia_ = dia/Clen
-  diaNew_ = diaNew/Clen
-  xc_ = xc/Clen + 1.5d0
-  yc_ = yc/Clen + 1.5d0
-  barL_ = barL/Clen
-  barH_ = barH/Clen
-  nx = int(chanL_)
-  ny = chanH_
-  nu_ = nu/Cnu
-  uMean_ = uMean/CVel
-  tau = 3*nu_ + 0.5d0
-  invTau = 1.0d0/tau
+  call calcSI_LBparams(si, lb)
 
-  write (*, *) 'Clen = ', Clen
-  write (*, *) 'Crho = ', Crho
-  write (*, *) 'Ct   = ', Ct
-  write (*, *) 'CVel = ', CVel
   write (*, *) 'tau  = ', tau
   write (*, *) 'uMax_ = ', 1.5d0*uMean_
   write (*, *) 'Re_SI = ', uMean*dia/nu
   write (*, *) 'Re_LBM = ', uMean_*dia_/nu_
-  ! write (*, *) 'Aborted for Checking'; stop
+  write (*, *) 'Aborted for Checking'; stop
 !----------------------------------------------------------------------
   allocate (isn(nx + 2, ny + 2))
   allocate (ux(nx + 2, ny + 2))
@@ -121,6 +123,7 @@ program cyl
   allocate (f(0:q - 1, nx + 2, ny + 2))
   allocate (ft(0:q - 1, nx + 2, ny + 2))
 !----------------------------------------------------------------------
+  ! call setupCiWi(ci, wi)
   ex(0) = 0; ey(0) = 0; 
   ex(1) = 1; ey(1) = 0; 
   ex(2) = 0; ey(2) = 1; 
@@ -132,6 +135,8 @@ program cyl
   ex(8) = 1; ey(8) = -1; 
   ci(:, 1) = ex
   ci(:, 2) = ey
+  write (*, *) ci(:, 1)
+  write (*, *) ci(:, 2)
 !----------------------------------------------------------------------
   do a = 0, q - 1
     if (a .eq. 0) wt(a) = 16*one36th
@@ -193,7 +198,7 @@ program cyl
 !----------------------------------------------------------------------
   do t_ = 0, time_
 
-    t = t_*Ct
+    t = t_*cf%time
 
     rhoSum = d0
     do i = 2, nx + 1
@@ -452,17 +457,17 @@ program cyl
 !----------------------------------------------------------------------
     fx_t = 0.5*(fx(1) + fx(2))
     fy_t = 0.5*(fy(1) + fy(2))
-    ! Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cd = fx_t*cf%force!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cl = fy_t*cf%force!/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*diaNew_)
+    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*diaNew_)
+    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
       write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       ! write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
-      !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
+      !write (*, '(I8,4(3X,F10.6))') ts, ts*cf%time, rhoAvg, Cd, Cl
 
       !write (11, '(I8,6(3X,F10.6))') ts, ux(150, 201), uy(150, 201), ux(200, 250), uy(200, 250), ux(250, 201), uy(250, 201)
     end if
@@ -661,8 +666,8 @@ contains
 
     do i = 0, noOfPts - 1
       theta = theta0 + i*dTheta
-      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*diaNew_*cos(theta)
-      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*diaNew_*sin(theta)
+      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*dia_*cos(theta)
+      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*dia_*sin(theta)
 
       ptOnCircle(i + 1)%unitVec%x = cos(theta)
       ptOnCircle(i + 1)%unitVec%y = sin(theta)
@@ -688,7 +693,7 @@ contains
         ! write (*, *) outDir
 
         do k = 1, 4
-          locBox(k)%isInside = ((locBox(k)%x - xc_)**d2 + (locBox(k)%y - yc_)**d2)**haf .le. haf*diaNew_
+          locBox(k)%isInside = ((locBox(k)%x - xc_)**d2 + (locBox(k)%y - yc_)**d2)**haf .le. haf*dia_
 
           if (locBox(k)%isInside) then
             locBox(k)%fluidNode(1)%x = locBox(k)%x + ci(outDir, 1)
@@ -836,7 +841,7 @@ contains
     double precision::totalForce, dx
     integer::i, ip1
 
-    dx = pi*diaNew_/noOfPtOnCircle
+    dx = pi*dia_/noOfPtOnCircle
 
     totalForce = d0
     do i = 1, noOfPtOnCircle
@@ -851,5 +856,47 @@ contains
     end do
 
   end function trapIntegrate
+
+  pure subroutine calcConvFactor(cf)
+    type(cf_t), intent(out) :: cf
+
+    cf%length = chanH/chanH_
+    cf%rho = rhoF/rhoF_
+    cf%time = dia/uMean*0.00025d0
+    cf%nu = cf%length**2.0d0/cf%time
+    cf%velocity = cf%length/cf%time
+    ! cf%force = cf%rho*cf%length**4.0d0*cf%time**(-2.0d0)
+    cf%force = cf%rho*cf%length**3.0d0*cf%time**(-2.0d0)
+
+  end subroutine calcConvFactor
+
+  pure subroutine calcLBparams(si, lb)
+    type(si_lb_t), intent(out) :: si, lb
+
+    si%channelLength = chanL
+    si%channelHeight = chanH
+    si%barLength = barL
+    si%barHeight = barH
+    si%diameter = dia
+    si%xCentre = xc
+    si%yCentre = yc
+    si%meanVel = uMean
+    si%nu = nu
+
+    lb%channelLength = si%channelLength/cf%length
+    lb%channelHeight = si%channelHeight/cf%length
+    lb%diameter = si%diameter/cf%length
+    lb%xCentre = si%xCentre/cf%length + 1.5d0
+    lb%yCentre = si%yCentre/cf%length + 1.5d0
+    lb%barLength = si%barLength/cf%length
+    lb%barHeight = si%barHeight/cf%length
+    lb%nu = si%nu/cf%nu
+    lb%meanVel = si%meanVel/cf%velocity
+    lb%tau = 3.0d0*lb%nu + 0.5d0
+
+    lb%totalTime = time_
+    si%totalTime = lb%totalTime*cf%time
+
+  end subroutine calcLBparams
 
 end program cyl
