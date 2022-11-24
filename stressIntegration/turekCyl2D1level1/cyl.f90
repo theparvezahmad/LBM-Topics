@@ -76,93 +76,49 @@ program cyl
   type(lbmTriplet_t)::onSurf
 
   integer::nx, ny
-  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: tau, t, invTau, sigma(2, 2)
+  double precision::  uPara_, uParaRamp_
+  double precision:: t, invTau, sigma(2, 2)
   integer:: i, j, k, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
-  double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
+  double precision:: tmp1, tmp2, tmp3, rhoSum, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
-  double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy
-  integer, dimension(0:q - 1):: ex, ey, kb, ci(0:q - 1, 2)
+  double precision, dimension(0:q - 1):: wi, feq, Q_xx, Q_yy, Q_xy
+  integer, dimension(0:q - 1):: kb
+  integer:: ci(0:q - 1, 2)
   double precision, dimension(0:q - 1):: tmpA
   double precision, allocatable, dimension(:, :, :):: f, ft
-  double precision, allocatable, dimension(:, :):: ux, uy, rho
+  type(lbmTriplet_t), allocatable, dimension(:, :):: lbmVar
   logical::isCyl, isBar
   character(len=30):: filename
   solnumber = 0
+
+  invTau = 1.0d0/lb%tau
 
   write (*, *) '======================================================'
   write (*, *) 'Program started at :', dateTime()
 !===Conversion Factors===
   call calcConvFactor(cf)
-
-  ! if (isDebug) then
-  !   write (*, *) "Invoked calcConvFactor(cf)"
-  !   write (*, *) "cf.length=", cf%length
-  !   write (*, *) "cf.rho=", cf%rho
-  !   write (*, *) "cf.time=", cf%time
-  !   write (*, *) "cf.velocity=", cf%velocity
-  !   write (*, *) "cf.nu=", cf%nu
-  !   write (*, *) "cf.force=", cf%force
-  !   write (*, *) '------------------------------------------------------'
-  ! end if
-
 !===Other LBM parameters===
-  call calcSI_LBparams(si, lb)
+  call calcLBparams(si, lb)
+  nx = int(lb%channelLength)
+  ny = int(lb%channelHeight)
 
-  write (*, *) 'tau  = ', tau
-  write (*, *) 'uMax_ = ', 1.5d0*uMean_
-  write (*, *) 'Re_SI = ', uMean*dia/nu
-  write (*, *) 'Re_LBM = ', uMean_*dia_/nu_
-  write (*, *) 'Aborted for Checking'; stop
+  write (*, *) 'lb.tau  = ', lb%tau
+  write (*, *) 'lb.uMax = ', 1.5d0*lb%meanVel
+  write (*, *) 'si.Re = ', si%meanVel*si%diameter/si%nu
+  write (*, *) 'lb.Re = ', lb%meanVel*lb%diameter/lb%nu
+  ! write (*, *) 'Aborted for Checking'; stop
 !----------------------------------------------------------------------
   allocate (isn(nx + 2, ny + 2))
-  allocate (ux(nx + 2, ny + 2))
-  allocate (uy(nx + 2, ny + 2))
-  allocate (rho(nx + 2, ny + 2))
+  allocate (lbmVar(nx + 2, ny + 2))
+  ! allocate (uy(nx + 2, ny + 2))
+  ! allocate (rho(nx + 2, ny + 2))
   allocate (f(0:q - 1, nx + 2, ny + 2))
   allocate (ft(0:q - 1, nx + 2, ny + 2))
 !----------------------------------------------------------------------
-  ! call setupCiWi(ci, wi)
-  ex(0) = 0; ey(0) = 0; 
-  ex(1) = 1; ey(1) = 0; 
-  ex(2) = 0; ey(2) = 1; 
-  ex(3) = -1; ey(3) = 0; 
-  ex(4) = 0; ey(4) = -1; 
-  ex(5) = 1; ey(5) = 1; 
-  ex(6) = -1; ey(6) = 1; 
-  ex(7) = -1; ey(7) = -1; 
-  ex(8) = 1; ey(8) = -1; 
-  ci(:, 1) = ex
-  ci(:, 2) = ey
-  write (*, *) ci(:, 1)
-  write (*, *) ci(:, 2)
+  call setupCiWi(ci, wi, kb)
 !----------------------------------------------------------------------
-  do a = 0, q - 1
-    if (a .eq. 0) wt(a) = 16*one36th
-    if (a .ge. 1 .and. a .le. 4) wt(a) = 4*one36th
-    if (a .ge. 5 .and. a .le. 8) wt(a) = one36th
-  end do
-!----------------------------------------------------------------------
-  do a = 0, q - 1
-    do a1 = a, q - 1
-      if (ex(a) + ex(a1) .eq. 0 .and. ey(a) + ey(a1) .eq. 0) then
-        kb(a) = a1
-        kb(a1) = a
-      end if
-    end do
-  end do
-!----------------------------------------------------------------------
-  do i = 1, nx + 2
-    do j = 1, ny + 2
-      uPara_ = d0! 6*uMean_*(ny - (j - 1.5))*(j - 1.5)/ny**2;
-      do a = 0, q - 1
-        tmp1 = uPara_*ex(a)
-        tmp2 = uPara_*uPara_
-        f(a, i, j) = wt(a)*rhoF_*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
-      end do
-    end do
-  end do
+  call initDistFun(f)
 !----------------------------------------------------------------------
   fx(1) = d0
   fy(1) = d0
@@ -176,10 +132,10 @@ program cyl
       ! ii = i - 1.5
       ! jj = j - 1.5
 
-      isCyl = ((i - xc_)**2.0 + (j - yc_)**2.0)**0.5 .le. 0.5*dia_
+      isCyl = ((i - lb%xCentre)**2.0 + (j - lb%yCentre)**2.0)**0.5 .le. 0.5*lb%diameter
 
-      isBar = (i .ge. xc_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
-              (j .ge. xc_ - barH_/2) .and. (j .le. xc_ + barH_/2)
+      isBar = (i .ge. lb%xCentre) .and. (i .le. lb%xCentre + lb%diameter/2 + lb%barLength) .and. &
+              (j .ge. lb%xCentre - lb%barHeight/2) .and. (j .le. lb%xCentre + lb%barHeight/2)
 
       isBar = .false.
 
@@ -203,20 +159,8 @@ program cyl
     rhoSum = d0
     do i = 2, nx + 1
       do j = 2, ny + 1
-        tmp1 = d0
-        tmp2 = d0
-        tmp3 = d0
-        do a = 0, q - 1
-          tmp1 = tmp1 + f(a, i, j)
-          tmp2 = tmp2 + f(a, i, j)*ex(a)
-          tmp3 = tmp3 + f(a, i, j)*ey(a)
-        end do
-
-        rho(i, j) = tmp1
-        ux(i, j) = tmp2/tmp1
-        uy(i, j) = tmp3/tmp1
-
-        rhoSum = rhoSum + tmp1
+        lbmVar(i, j) = macroVar(f(:, i, j))
+        rhoSum = rhoSum + lbmVar(i, j)%r
       end do
     end do
 
@@ -228,20 +172,18 @@ program cyl
 !----------------------------------------------------------------------
     do i = 2, nx + 1
       do j = 2, ny + 1
-        do a = 0, q - 1
-          tmp1 = ux(i, j)*ex(a) + uy(i, j)*ey(a)
-          tmp2 = ux(i, j)*ux(i, j) + uy(i, j)*uy(i, j)
-          feq = wt(a)*rho(i, j)*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
-          ft(a, i, j) = f(a, i, j) - (f(a, i, j) - feq)/tau !collision
-        end do
+        feq = eqDist(lbmVar(i, j))
+        ! do a = 0, q - 1
+        ft(:, i, j) = f(:, i, j) - (f(:, i, j) - feq)/lb%tau !collision
+        ! end do
       end do
     end do
 !----------------------------------------------------------------------
     do i = 2, nx + 1 !Streaming post-collision
       do j = 2, ny + 1
         do a = 0, q - 1
-          ia = i + ex(a)
-          ja = j + ey(a)
+          ia = i + ci(a, 1)
+          ja = j + ci(a, 2)
           !if (ia<1 )        { ia = nx  }
           !if (ia>nx)        { ia = 1   }
 
@@ -254,109 +196,109 @@ program cyl
       !Inlet
       i = 2
 
-      uPara_ = 6.0d0*uMean_*(ny - (j - 1.5))*(j - 1.5)/ny**2.0d0; 
+      uPara_ = 6.0d0*lb%meanVel*(ny - (j - 1.5))*(j - 1.5)/ny**2.0d0; 
       if (t .lt. 2.0d0) then
         uParaRamp_ = uPara_*(1 - cos(pi*t/2.0d0))/2.0d0
       else
         uParaRamp_ = uPara_
       end if
 
-      ux(i, j) = uParaRamp_
-      uy(i, j) = 0.0
-      rho(i, j) = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2.0*(f(3, i, j) + f(6, i, j) + f(7, i, j)))/(1 - ux(i, j))
-      tmp2 = ux(i, j)*ux(i, j) + uy(i, j)*uy(i, j)
+      lbmVar(i, j)%u = uParaRamp_
+      lbmVar(i, j)%v = 0.0
+      lbmVar(i, j)%r = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2.0*(f(3, i, j) + f(6, i, j) + f(7, i, j)))/(1 - lbmVar(i, j)%u)
+      tmp2 = lbmVar(i, j)%u*lbmVar(i, j)%u + lbmVar(i, j)%v*lbmVar(i, j)%v
 
-      dudx = (-3.0*ux(i, j) + 4.0*ux(i + 1, j) - 1.0*ux(i + 2, j))/2.0 !dudx
+      dudx = (-3.0*lbmVar(i, j)%u + 4.0*lbmVar(i + 1, j)%u - 1.0*lbmVar(i + 2, j)%u)/2.0 !dudx
       if (j == 2) then
-        dudy = (-3.0*ux(i, j) + 4.0*ux(i, j + 1) - 1.0*ux(i, j + 2))/2.0
+        dudy = (-3.0*lbmVar(i, j)%u + 4.0*lbmVar(i, j + 1)%u - 1.0*lbmVar(i, j + 2)%u)/2.0
       else if (j == ny + 1) then
-        dudy = (3.0*ux(i, j) - 4.0*ux(i, j - 1) + 1.0*ux(i, j - 2))/2.0
+        dudy = (3.0*lbmVar(i, j)%u - 4.0*ux(i, j - 1)%u + 1.0*ux(i, j - 2)%u)/2.0
       else
         dudy = (ux(i, j + 1) - ux(i, j - 1))/2.0
       end if
 
-      dvdx = (-3.0*uy(i, j) + 4.0*uy(i + 1, j) - 1.0*uy(i + 2, j))/2.0
+      dvdx = (-3.0*lbmVar(i, j)%v + 4.0*uy(i + 1, j) - 1.0*uy(i + 2, j))/2.0
       if (j == 2) then
-        dvdy = (-3.0*uy(i, j) + 4.0*uy(i, j + 1) - 1.0*uy(i, j + 2))/2.0
+        dvdy = (-3.0*lbmVar(i, j)%v + 4.0*uy(i, j + 1) - 1.0*uy(i, j + 2))/2.0
       else if (j == ny + 1) then
-        dvdy = (3.0*uy(i, j) - 4.0*uy(i, j - 1) + 1.0*uy(i, j - 2))/2.0
+        dvdy = (3.0*lbmVar(i, j)%v - 4.0*uy(i, j - 1) + 1.0*uy(i, j - 2))/2.0
       else
         dvdy = (uy(i, j + 1) - uy(i, j - 1))/2.0
       end if
 
       do a = 0, q - 1
-        Q_xx(a) = ex(a)*ex(a) - 1.0/3.0
-        Q_yy(a) = ey(a)*ey(a) - 1.0/3.0
-        Q_xy(a) = ex(a)*ey(a)
-        f_neq = -wt(a)*3.0*tau*rho(i, j)*(Q_xx(a)*dudx + Q_xy(a)*dudy + Q_xy(a)*dvdx + Q_yy(a)*dvdy)
-        tmp1 = ex(a)*ux(i, j) + ey(a)*uy(i, j)
-        feq = wt(a)*rho(i, j)*(1 + tmp1*3.0 + 0.5*tmp1*tmp1*3.0*3.0 - 0.5*3.0*tmp2)
-        f(a, i, j) = feq + f_neq
+        Q_xx(a) = ci(a, 1)*ci(a, 1) - 1.0/3.0
+        Q_yy(a) = ci(a, 2)*ci(a, 2) - 1.0/3.0
+        Q_xy(a) = ci(a, 1)*ci(a, 2)
+        f_neq = -wi(a)*3.0*lb%tau*lbmVar(i, j)%r*(Q_xx(a)*dudx + Q_xy(a)*dudy + Q_xy(a)*dvdx + Q_yy(a)*dvdy)
+        tmp1 = ci(a, 1)*lbmVar(i, j)%u + ci(a, 2)*lbmVar(i, j)%v
+        feq(a) = wi(a)*lbmVar(i, j)%r*(1 + tmp1*3.0 + 0.5*tmp1*tmp1*3.0*3.0 - 0.5*3.0*tmp2)
+        f(a, i, j) = feq(a) + f_neq
       end do
 
       !Outlet
       i = nx + 1
-      rho(i, j) = rhoF_
-      ux(i, j) = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(1, i, j) + f(5, i, j) + f(8, i, j)))/rho(i, j) - 1
-      uy(i, j) = 0.0
-      tmp2 = ux(i, j)*ux(i, j) + uy(i, j)*uy(i, j)
+      lbmVar(i, j)%r = rhoF_
+      lbmVar(i, j)%u = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(1, i, j) + f(5, i, j) + f(8, i, j)))/lbmVar(i, j)%r - 1
+      lbmVar(i, j)%v = 0.0
+      tmp2 = lbmVar(i, j)%u*lbmVar(i, j)%u + lbmVar(i, j)%v*lbmVar(i, j)%v
 
-      dudx = (3.0*ux(i, j) - 4.0*ux(i - 1, j) + 1.0*ux(i - 2, j))/2.0 !dudx
+      dudx = (3.0*lbmVar(i, j)%u - 4.0*ux(i - 1, j) + 1.0*ux(i - 2, j))/2.0 !dudx
       if (j == 2) then
-        dudy = (-3.0*ux(i, j) + 4.0*ux(i, j + 1) - 1.0*ux(i, j + 2))/2.0
+        dudy = (-3.0*lbmVar(i, j)%u + 4.0*ux(i, j + 1) - 1.0*ux(i, j + 2))/2.0
       else if (j == ny + 1) then
-        dudy = (3.0*ux(i, j) - 4.0*ux(i, j - 1) + 1.0*ux(i, j - 2))/2.0
+        dudy = (3.0*lbmVar(i, j)%u - 4.0*ux(i, j - 1) + 1.0*ux(i, j - 2))/2.0
       else
         dudy = (ux(i, j + 1) - ux(i, j - 1))/2.0
       end if
 
-      dvdx = (3.0*uy(i, j) - 4.0*uy(i - 1, j) + 1.0*uy(i - 2, j))/2.0 !dvdx
+      dvdx = (3.0*lbmVar(i, j)%v - 4.0*uy(i - 1, j) + 1.0*uy(i - 2, j))/2.0 !dvdx
       if (j == 2) then
-        dvdy = (-3.0*uy(i, j) + 4.0*uy(i, j + 1) - 1.0*uy(i, j + 2))/2.0
+        dvdy = (-3.0*lbmVar(i, j)%v + 4.0*uy(i, j + 1) - 1.0*uy(i, j + 2))/2.0
       else if (j == ny + 1) then
-        dvdy = (3.0*uy(i, j) - 4.0*uy(i, j - 1) + 1.0*uy(i, j - 2))/2.0
+        dvdy = (3.0*lbmVar(i, j)%v - 4.0*uy(i, j - 1) + 1.0*uy(i, j - 2))/2.0
       else
         dvdy = (uy(i, j + 1) - uy(i, j - 1))/2.0
       end if
 
       do a = 0, q - 1
-        Q_xx(a) = ex(a)*ex(a) - 1.0/3.0
-        Q_yy(a) = ey(a)*ey(a) - 1.0/3.0
-        Q_xy(a) = ex(a)*ey(a)
-        f_neq = -wt(a)*3.0*tau*rho(i, j)*(Q_xx(a)*dudx + Q_xy(a)*dudy + Q_xy(a)*dvdx + Q_yy(a)*dvdy)
-        tmp1 = ex(a)*ux(i, j) + ey(a)*uy(i, j)
-        feq = wt(a)*rho(i, j)*(1 + tmp1*3.0 + 0.5*tmp1*tmp1*3.0*3.0 - 0.5*3.0*tmp2)
-        f(a, i, j) = feq + f_neq
+        Q_xx(a) = ci(a, 1)*ci(a, 1) - 1.0/3.0
+        Q_yy(a) = ci(a, 2)*ci(a, 2) - 1.0/3.0
+        Q_xy(a) = ci(a, 1)*ci(a, 2)
+        f_neq = -wi(a)*3.0*lb%tau*lbmVar(i, j)%r*(Q_xx(a)*dudx + Q_xy(a)*dudy + Q_xy(a)*dvdx + Q_yy(a)*dvdy)
+        tmp1 = ci(a, 1)*lbmVar(i, j)%u + ci(a, 2)*lbmVar(i, j)%v
+        feq(a) = wi(a)*lbmVar(i, j)%r*(1 + tmp1*3.0 + 0.5*tmp1*tmp1*3.0*3.0 - 0.5*3.0*tmp2)
+        f(a, i, j) = feq(a) + f_neq
       end do
     end do
 !----------------------------------------------------------------------
     ! do j = 2, ny + 1
     !    i = 2
-    !    uPara_ = 6.0d0*uMean_*(ny - (j - 1.5))*(j - 1.5)/ny**2.0d0;
+    !    uPara_ = 6.0d0*lb%meanVel*(ny - (j - 1.5))*(j - 1.5)/ny**2.0d0;
     !    if (t .lt. 2.0d0) then
     !       uParaRamp_ = uPara_*(1 - cos(pi*t/2.0d0))/2.0d0
     !    else
     !       uParaRamp_ = uPara_
     !    end if
-    !    rho(i, j) = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(6, i, j) + f(3, i, j) + f(7, i, j)))/(1 - uParaRamp_)
-    !    f(1, i, j) = f(3, i, j) + ((2.0/3.0)*rho(i, j)*uParaRamp_)
-    !    f(5, i, j) = f(7, i, j) - (0.5*(f(2, i, j) - f(4, i, j))) + ((1.0/6.0)*rho(i, j)*uParaRamp_)
-    !    f(8, i, j) = f(6, i, j) + (0.5*(f(2, i, j) - f(4, i, j))) + ((1.0/6.0)*rho(i, j)*uParaRamp_)
+    !    lbmVar(i, j)%r = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(6, i, j) + f(3, i, j) + f(7, i, j)))/(1 - uParaRamp_)
+    !    f(1, i, j) = f(3, i, j) + ((2.0/3.0)*lbmVar(i, j)%r*uParaRamp_)
+    !    f(5, i, j) = f(7, i, j) - (0.5*(f(2, i, j) - f(4, i, j))) + ((1.0/6.0)*lbmVar(i, j)%r*uParaRamp_)
+    !    f(8, i, j) = f(6, i, j) + (0.5*(f(2, i, j) - f(4, i, j))) + ((1.0/6.0)*lbmVar(i, j)%r*uParaRamp_)
     ! end do
 
     ! do j = 2, ny + 1
     !    i = nx + 1
-    !    ux(i, j) = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(1, i, j) + f(5, i, j) + f(8, i, j)))/rhoF_ - 1
-    !    f(3, i, j) = f(1, i, j) - ((2.0/3.0)*rhoF_*ux(i, j))
-    !    f(6, i, j) = f(8, i, j) - 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*ux(i, j))
-    !    f(7, i, j) = f(5, i, j) + 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*ux(i, j))
+    !    lbmVar(i, j)%u = (f(0, i, j) + f(2, i, j) + f(4, i, j) + 2*(f(1, i, j) + f(5, i, j) + f(8, i, j)))/rhoF_ - 1
+    !    f(3, i, j) = f(1, i, j) - ((2.0/3.0)*rhoF_*lbmVar(i, j)%u)
+    !    f(6, i, j) = f(8, i, j) - 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*lbmVar(i, j)%u)
+    !    f(7, i, j) = f(5, i, j) + 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*lbmVar(i, j)%u)
     ! end do
 !----------------------------------------------------------------------
 !=================working================================
     do i = 1, size(ptOnCircle)
       do k = 1, 4
 
-        associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
+        associate (lf => ptOnCircle(i)%box(k)%fluidNode, lbox => ptOnCircle(i)%box(k))
 
           ! lf(2)%x = 45.0d0
           ! lf(2)%y = 44.0d0
@@ -366,13 +308,13 @@ program cyl
           ! lf(1)%y = 45.0d0
           ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
 
-          ! lb%x = 45.0d0
-          ! lb%y = 46.0d0
-          ! call linearExterp(lb)
-          ! write (*, *) "Hello", lb%z
+          ! lbox%x = 45.0d0
+          ! lbox%y = 46.0d0
+          ! call linearExterp(lbox)
+          ! write (*, *) "Hello", lbox%z
           ! stop
 
-          if (lb%isInside) then
+          if (lbox%isInside) then
             tmpA = f(:, int(lf(1)%x), int(lf(1)%y))
             lf(1)%f = tmpA
             lf(1)%fneq = tmpA - eqDist(macroVar(tmpA))
@@ -381,11 +323,11 @@ program cyl
             lf(2)%f = tmpA
             lf(2)%fneq = tmpA - eqDist(macroVar(tmpA))
 
-            call linearExterp(lb)
+            call linearExterp(lbox)
           else
-            tmpA = f(:, int(lb%x), int(lb%y))
-            lb%f = tmpA
-            lb%fneq = tmpA - eqDist(macroVar(tmpA))
+            tmpA = f(:, int(lbox%x), int(lbox%y))
+            lbox%f = tmpA
+            lbox%fneq = tmpA - eqDist(macroVar(tmpA))
           end if
 
         end associate
@@ -415,7 +357,7 @@ program cyl
     end do
 
     ! ptOnCircle%force%x = 1.75
-    ! write (*, *) dia_
+    ! write (*, *) lb%diameter
     ! write (*, *) trapIntegrate(ptOnCircle%force%x)
     ! stop
 
@@ -436,14 +378,14 @@ program cyl
 
           do a = 0, q - 1
 
-            ia = i + ex(a)
-            ja = j + ey(a)
+            ia = i + ci(a, 1)
+            ja = j + ci(a, 2)
 
             if (isn(ia, ja) .eq. 1) then !structure
               f(kb(a), i, j) = ft(a, i, j)
               f(a, ia, ja) = ft(kb(a), ia, ja)
-              fx(2) = fx(2) + ex(a)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
-              fy(2) = fy(2) + ey(a)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
+              fx(2) = fx(2) + ci(a, 1)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
+              fy(2) = fy(2) + ci(a, 2)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
             end if
 
             if (isn(ia, ja) .eq. 2) then !wall
@@ -457,12 +399,13 @@ program cyl
 !----------------------------------------------------------------------
     fx_t = 0.5*(fx(1) + fx(2))
     fy_t = 0.5*(fy(1) + fy(2))
-    ! Cd = fx_t*cf%force!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cl = fy_t*cf%force!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cd = fx_t*cf%force!/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    ! Cl = fy_t*cf%force!/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    Cd = fx_t/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    Cd2 = totalForce%x/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    Cl = fy_t/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    Cl2 = totalForce%y/(0.5*rhoF_*lb%meanVel*lb%meanVel*lb%diameter)
+    write (*, *) rhoF_
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
       write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
@@ -486,7 +429,7 @@ program cyl
 
       do j = 2, ny + 1
         do i = 2, nx + 1
-          write (12, '(2(2X,I6),3(2X,E12.4),2X,I3)') i, j, ux(i, j), uy(i, j), rho(i, j), isn(i, j)
+          write (12, '(2(2X,I6),3(2X,E12.4),2X,I3)') i, j, lbmVar(i, j)%u, lbmVar(i, j)%v, lbmVar(i, j)%r, isn(i, j)
         end do
         write (12, *)
       end do
@@ -514,8 +457,8 @@ contains
     tmp = d0
     do a = 0, q - 1
       tmp(1) = tmp(1) + f(a)
-      tmp(2) = tmp(2) + f(a)*ex(a)
-      tmp(3) = tmp(3) + f(a)*ey(a)
+      tmp(2) = tmp(2) + f(a)*ci(a, 1)
+      tmp(3) = tmp(3) + f(a)*ci(a, 2)
     end do
 
     rho = tmp(1)
@@ -613,10 +556,10 @@ contains
     double precision:: tmp1, tmp2
 
     do a = 0, q - 1
-      tmp1 = lbmVar%u*ex(a) + lbmVar%v*ey(a)
+      tmp1 = lbmVar%u*ci(a, 1) + lbmVar%v*ci(a, 2)
       tmp2 = lbmVar%u**d2 + lbmVar%v**d2
-      feq = wt(a)*lbmVar%r*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
-      ! ft(a) = f(a) - (f(a) - feq)/tau !collision
+      feq(a) = wi(a)*lbmVar%r*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
+      ! ft(a) = f(a) - (f(a) - feq)/lb%tau !collision
     end do
 
   end function eqDist
@@ -633,8 +576,8 @@ contains
     tmp = d0
     do a = 0, q - 1
       tmp(1) = tmp(1) + f(a)
-      tmp(2) = tmp(2) + f(a)*ex(a)
-      tmp(3) = tmp(3) + f(a)*ey(a)
+      tmp(2) = tmp(2) + f(a)*ci(a, 1)
+      tmp(3) = tmp(3) + f(a)*ci(a, 2)
     end do
 
     lbmVar%r = tmp(1)
@@ -666,8 +609,8 @@ contains
 
     do i = 0, noOfPts - 1
       theta = theta0 + i*dTheta
-      ptOnCircle(i + 1)%Pt%x = xc_ + 0.5*dia_*cos(theta)
-      ptOnCircle(i + 1)%Pt%y = yc_ + 0.5*dia_*sin(theta)
+      ptOnCircle(i + 1)%Pt%x = lb%xCentre + 0.5*lb%diameter*cos(theta)
+      ptOnCircle(i + 1)%Pt%y = lb%yCentre + 0.5*lb%diameter*sin(theta)
 
       ptOnCircle(i + 1)%unitVec%x = cos(theta)
       ptOnCircle(i + 1)%unitVec%y = sin(theta)
@@ -693,7 +636,7 @@ contains
         ! write (*, *) outDir
 
         do k = 1, 4
-          locBox(k)%isInside = ((locBox(k)%x - xc_)**d2 + (locBox(k)%y - yc_)**d2)**haf .le. haf*dia_
+          locBox(k)%isInside = ((locBox(k)%x - lb%xCentre)**d2 + (locBox(k)%y - lb%yCentre)**d2)**haf .le. haf*lb%diameter
 
           if (locBox(k)%isInside) then
             locBox(k)%fluidNode(1)%x = locBox(k)%x + ci(outDir, 1)
@@ -841,7 +784,7 @@ contains
     double precision::totalForce, dx
     integer::i, ip1
 
-    dx = pi*dia_/noOfPtOnCircle
+    dx = pi*lb%diameter/noOfPtOnCircle
 
     totalForce = d0
     do i = 1, noOfPtOnCircle
@@ -862,7 +805,7 @@ contains
 
     cf%length = chanH/chanH_
     cf%rho = rhoF/rhoF_
-    cf%time = dia/uMean*0.00025d0
+    cf%time = dia/uMean*0.0025d0
     cf%nu = cf%length**2.0d0/cf%time
     cf%velocity = cf%length/cf%time
     ! cf%force = cf%rho*cf%length**4.0d0*cf%time**(-2.0d0)
@@ -898,5 +841,57 @@ contains
     si%totalTime = lb%totalTime*cf%time
 
   end subroutine calcLBparams
+
+  pure subroutine setupCiWi(ci, wi, kb)
+    integer, intent(out) :: ci(0:q - 1, 2), kb(0:q - 1)
+    double precision, intent(out) :: wi(0:q - 1)
+    integer:: ex(0:q - 1), ey(0:q - 1), a, a1
+
+    ex(0) = 0; ey(0) = 0; 
+    ex(1) = 1; ey(1) = 0; 
+    ex(2) = 0; ey(2) = 1; 
+    ex(3) = -1; ey(3) = 0; 
+    ex(4) = 0; ey(4) = -1; 
+    ex(5) = 1; ey(5) = 1; 
+    ex(6) = -1; ey(6) = 1; 
+    ex(7) = -1; ey(7) = -1; 
+    ex(8) = 1; ey(8) = -1; 
+    ci(:, 1) = ex
+    ci(:, 2) = ey
+!----------------------------------------------------------------------
+    do a = 0, q - 1
+      if (a .eq. 0) wi(a) = 16*one36th
+      if (a .ge. 1 .and. a .le. 4) wi(a) = 4*one36th
+      if (a .ge. 5 .and. a .le. 8) wi(a) = one36th
+    end do
+
+    do a = 0, q - 1
+      do a1 = a, q - 1
+        if (ci(a, 1) + ci(a1, 1) .eq. 0 .and. ci(a, 2) + ci(a1, 2) .eq. 0) then
+          kb(a) = a1
+          kb(a1) = a
+        end if
+      end do
+    end do
+
+  end subroutine setupCiWi
+
+  pure subroutine initDistFun(f)
+    double precision, dimension(:, :, :), intent(inout) :: f
+    double precision:: uPara_, tmp(3)
+    integer:: i, j, a
+
+    do i = 1, nx + 2
+      do j = 1, ny + 2
+        uPara_ = d0! 6*lb%meanVel*(ny - (j - 1.5))*(j - 1.5)/ny**2;
+        do a = 0, q - 1
+          tmp(1) = uPara_*ci(a, 1)
+          tmp(2) = uPara_*uPara_
+          f(a, i, j) = wi(a)*rhoF_*(1.0 + 3.0*tmp(1) + 4.5*tmp(1)*tmp(1) - 1.5*tmp(2))
+        end do
+      end do
+    end do
+
+  end subroutine initDistFun
 
 end program cyl
