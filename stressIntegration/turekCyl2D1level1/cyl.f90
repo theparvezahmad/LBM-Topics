@@ -4,7 +4,7 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 205, &
+    chanH_ = 82, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
@@ -82,7 +82,7 @@ program cyl
 !===Conversion Factors===
   Clen = chanH/chanH_
   Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.00025d0
+  Ct = dia/uMean*0.0025d0
   Cnu = Clen**2.0d0/Ct
   CVel = Clen/Ct
   ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
@@ -346,6 +346,8 @@ program cyl
     !    f(7, i, j) = f(5, i, j) + 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*ux(i, j))
     ! end do
 !----------------------------------------------------------------------
+    call calcStressTensor2(f(:, xc_, yc_ + dia_), sigma, onSurf)
+    write (*, '(4(2X,E12.4))') sigma(1, 1), sigma(1, 2), sigma(2, 1), sigma(2, 2)
 !=================working================================
     do i = 1, size(ptOnCircle)
       do k = 1, 4
@@ -572,7 +574,7 @@ contains
     do a = 0, q - 1
       tmp1 = lbmVar%u*ex(a) + lbmVar%v*ey(a)
       tmp2 = lbmVar%u**d2 + lbmVar%v**d2
-      feq = wt(a)*lbmVar%r*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
+      feq(a) = wt(a)*lbmVar%r*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
       ! ft(a) = f(a) - (f(a) - feq)/tau !collision
     end do
 
