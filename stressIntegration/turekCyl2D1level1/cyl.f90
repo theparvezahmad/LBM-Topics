@@ -412,9 +412,9 @@ program cyl
         tmpA(a) = dataPt%z
       end do
 
-      call calcStressTensor2(tmpA, sigma)
+      call calcStressTensor(tmpA, sigma)
       ptOnCircle(i)%n2%st = sigma
-      call calcStressTensor2(f(:, int(ptOnCircle(i)%n1%x), int(ptOnCircle(i)%n1%y)), sigma)
+      call calcStressTensor(f(:, int(ptOnCircle(i)%n1%x), int(ptOnCircle(i)%n1%y)), sigma)
       ptOnCircle(i)%n1%st = sigma
 
       dataPt1%x = ptOnCircle(i)%n2%x
