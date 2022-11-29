@@ -4,13 +4,13 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 82, &
+    chanH_ = 205, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
-    dispFreq = 10, &
-    noOfPtOnCircle = 16
+    dispFreq = 100, &
+    noOfPtOnCircle = 400
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -43,6 +43,9 @@ program cyl
     double precision::x, y
   end type doublet_t
 
+  type triplet_t
+    double precision::x, y, z
+  end type triplet_t
   type doubletInt_t
     integer::x, y
   end type doubletInt_t
@@ -63,22 +66,25 @@ program cyl
 
   type ptWithTensorN0_t
     double precision::x, y
-    type(tensor2D_t)::st
+    ! type(tensor2D_t)::st
+    double precision::st(2, 2)
   end type
 
   type ptWithTensorN1_t
     integer::x, y
-    type(tensor2D_t)::st
+    ! type(tensor2D_t)::st
+    double precision::st(2, 2)
   end type
 
   type ptWithTensorN2_t
     double precision::x, y
-    type(tensor2D_t)::st
+    ! type(tensor2D_t)::st
+    double precision::st(2, 2)
     type(doubletInt_t)::b(2)
   end type
 
   type custom_t
-    type(doublet_t)::unitVec, force
+    type(doublet_t)::uv, force
     type(ptWithTensorN0_t)::n0
     type(ptWithTensorN1_t)::n1
     type(ptWithTensorN2_t)::n2
@@ -86,15 +92,17 @@ program cyl
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle
   type(doublet_t)::totalForce
-  type(lbmTriplet_t)::onSurf
+  type(triplet_t)::dataPt1, dataPt2, dataPt
+  ! type(lbmTriplet_t)::onSurf
   integer::nx, ny
+  double precision, dimension(noOfPtOnCircle):: forceX, forceY
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
-  integer:: i, j, k, a, a1, t_, ia, ja, solnumber
+  integer:: i, j, k, p, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
-  double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy
+  double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy, tmpA
   integer, dimension(0:q - 1):: ex, ey, kb, ci(0:q - 1, 2)
   double precision, allocatable, dimension(:, :, :):: f, ft
   double precision, allocatable, dimension(:, :):: ux, uy, rho
@@ -107,7 +115,7 @@ program cyl
 !===Conversion Factors===
   Clen = chanH/chanH_
   Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.0025d0
+  Ct = dia/uMean*0.00025d0
   Cnu = Clen**2.0d0/Ct
   CVel = Clen/Ct
   ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
@@ -372,73 +380,134 @@ program cyl
     !    f(7, i, j) = f(5, i, j) + 0.5*(f(2, i, j) - f(4, i, j)) - ((1.0/6.0)*rhoF_*ux(i, j))
     ! end do
 !----------------------------------------------------------------------
-    call calcStressTensor2(f(:, xc_, yc_ + dia_), sigma, onSurf)
-    write (*, '(4(2X,E12.4))') sigma(1, 1), sigma(1, 2), sigma(2, 1), sigma(2, 2)
+    ! call calcStressTensor2(f(:, int(xc_), int(yc_ + dia_)), sigma)
+    ! write (*, '(4(2X,E12.4))') sigma(1, 1), sigma(1, 2), sigma(2, 1), sigma(2, 2)
+
+    ! dataPt2%x = 59.0d0
+    ! dataPt2%y = 11.0d0
+    ! dataPt2%z = 300.0d0
+
+    ! dataPt1%x = 60.0d0
+    ! dataPt1%y = 10.0d0
+    ! dataPt1%z = 200.0d0
+
+    ! dataPt%x = 60.5d0
+    ! dataPt%y = 9.5d0
+    ! call linearExtInt(dataPt1, dataPt2, dataPt)
+    ! write (*, *) dataPt%z
+    ! stop
 !=================working================================
-    ! do i = 1, size(ptOnCircle)
-    !   do k = 1, 4
+    do i = 1, size(ptOnCircle)
 
-    !     associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
+      dataPt1%x = ptOnCircle(i)%n2%b(1)%x
+      dataPt1%y = ptOnCircle(i)%n2%b(1)%y
+      dataPt2%x = ptOnCircle(i)%n2%b(2)%x
+      dataPt2%y = ptOnCircle(i)%n2%b(2)%y
+      dataPt%x = ptOnCircle(i)%n2%x
+      dataPt%y = ptOnCircle(i)%n2%y
+      do a = 0, q - 1
+        dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
+        dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
+        call linearExtInt(dataPt1, dataPt2, dataPt)
+        tmpA(a) = dataPt%z
+      end do
 
-    !       ! lf(2)%x = 45.0d0
-    !       ! lf(2)%y = 44.0d0
-    !       ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
+      call calcStressTensor2(tmpA, sigma)
+      ptOnCircle(i)%n2%st = sigma
+      call calcStressTensor2(f(:, int(ptOnCircle(i)%n1%x), int(ptOnCircle(i)%n1%y)), sigma)
+      ptOnCircle(i)%n1%st = sigma
 
-    !       ! lf(1)%x = 45.0d0
-    !       ! lf(1)%y = 45.0d0
-    !       ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      dataPt1%x = ptOnCircle(i)%n2%x
+      dataPt1%y = ptOnCircle(i)%n2%y
+      dataPt2%x = ptOnCircle(i)%n1%x
+      dataPt2%y = ptOnCircle(i)%n1%y
+      dataPt%x = ptOnCircle(i)%n0%x
+      dataPt%y = ptOnCircle(i)%n0%y
+      do k = 1, 2
+        do p = 1, 2
+          dataPt1%z = ptOnCircle(i)%n2%st(k, p)
+          dataPt2%z = ptOnCircle(i)%n1%st(k, p)
+          call linearExtInt(dataPt1, dataPt2, dataPt)
+          ptOnCircle(i)%n0%st(k, p) = dataPt%z
+        end do
+      end do
 
-    !       ! lb%x = 45.0d0
-    !       ! lb%y = 46.0d0
-    !       ! call linearExterp(lb)
-    !       ! write (*, *) "Hello", lb%z
-    !       ! stop
+      ! do k = 1, 4
 
-    !       if (lb%isInside) then
-    !         lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
-    !         lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
-    !         call linearExterp(lb)
-    !       else
-    !         lb%z = f(:, int(lb%x), int(lb%y))
-    !       end if
+      !   associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
 
-    !     end associate
+      !     ! lf(2)%x = 45.0d0
+      !     ! lf(2)%y = 44.0d0
+      !     ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
 
-    !   end do
+      !     ! lf(1)%x = 45.0d0
+      !     ! lf(1)%y = 45.0d0
+      !     ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
 
-    !   ! ptOnCircle(1)%box(1)%z = [10.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-    !   ! ptOnCircle(1)%box(2)%z = [20.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-    !   ! ptOnCircle(1)%box(3)%z = [30.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-    !   ! ptOnCircle(1)%box(4)%z = [40.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-    !   ! ! ptOnCircle(1)%Pt%x = 51
-    !   ! ! ptOnCircle(1)%Pt%y = 42
-    !   ! call bilinearInterp(ptOnCircle(1)%Pt, ptOnCircle(1)%box)
-    !   ! write (*, *) ptOnCircle(1)%Pt%x
-    !   ! write (*, *) ptOnCircle(1)%Pt%y
-    !   ! write (*, *) ptOnCircle(1)%Pt%z
-    !   ! stop
+      !     ! lb%x = 45.0d0
+      !     ! lb%y = 46.0d0
+      !     ! call linearExterp(lb)
+      !     ! write (*, *) "Hello", lb%z
+      !     ! stop
 
-    !   call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
+      !     if (lb%isInside) then
+      !       lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
+      !       lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
+      !       call linearExterp(lb)
+      !     else
+      !       lb%z = f(:, int(lb%x), int(lb%y))
+      !     end if
 
-    !   call calcStressTensor2(ptOnCircle(i)%Pt%z, sigma, onSurf)
+      !   end associate
 
-    !   associate (uv => ptOnCircle(i)%unitVec)
-    !     ptOnCircle(i)%force%x = sigma(1, 1)*uv%x + sigma(1, 2)*uv%y! - onSurf%r*onSurf%u*(onSurf%u*uv%x + onSurf%v*uv%y)
-    !     ptOnCircle(i)%force%y = sigma(2, 1)*uv%x + sigma(2, 2)*uv%y! - onSurf%r*onSurf%v*(onSurf%u*uv%x + onSurf%v*uv%y)
-    !   end associate
-    ! end do
+      ! end do
 
-    ! ! ptOnCircle%force%x = 1.75
-    ! ! write (*, *) dia_
-    ! ! write (*, *) trapIntegrate(ptOnCircle%force%x)
-    ! ! stop
+      ! ptOnCircle(1)%box(1)%z = [10.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(2)%z = [20.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(3)%z = [30.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ptOnCircle(1)%box(4)%z = [40.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+      ! ! ptOnCircle(1)%Pt%x = 51
+      ! ! ptOnCircle(1)%Pt%y = 42
+      ! call bilinearInterp(ptOnCircle(1)%Pt, ptOnCircle(1)%box)
+      ! write (*, *) ptOnCircle(1)%Pt%x
+      ! write (*, *) ptOnCircle(1)%Pt%y
+      ! write (*, *) ptOnCircle(1)%Pt%z
+      ! stop
 
-    ! totalForce%x = trapIntegrate(ptOnCircle%force%x)
-    ! totalForce%y = trapIntegrate(ptOnCircle%force%y)
+      ! call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
 
-    ! ! write (*, *) '======================================'
-    ! ! write (*, *) (ptOnCircle%Pt)
-    ! ! stop
+      ! call calcStressTensor2(ptOnCircle(i)%Pt%z, sigma, onSurf)
+
+      associate (poc => ptOnCircle(i))
+        poc%force%x = poc%n0%st(1, 1)*poc%uv%x + poc%n0%st(1, 2)*poc%uv%y
+        ! - onSurf%r*onSurf%u*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
+        poc%force%y = poc%n0%st(2, 1)*poc%uv%x + poc%n0%st(2, 2)*poc%uv%y
+        ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
+      end associate
+
+      if (t_ == 25000) then
+        write (*, *) i, ptOnCircle(i)%force
+      end if
+    end do
+
+    ! ptOnCircle%force%x = 1.75
+    ! write (*, *) dia_
+    ! write (*, *) trapIntegrate(ptOnCircle%force%x)
+    ! stop
+
+    do k = 1, noOfPtOnCircle
+      forceX(k) = ptOnCircle(k)%force%x
+      forceY(k) = ptOnCircle(k)%force%y
+    end do
+    ! write (*, *) forceX
+    totalForce%x = trapIntegrate(forceX)
+    totalForce%y = trapIntegrate(forceY)
+
+    if (t_ == 25000) then
+      write (*, *) '======================================'
+      write (*, *) totalForce%x, sum(forceX)
+      write (*, *) 0.5*rhoF_*uMean_*uMean_*dia_
+    end if
 
 !=================working================================
 
@@ -516,12 +585,12 @@ program cyl
   write (*, *) '======================================================'
 contains
 
-  pure subroutine calcStressTensor(f, sigma, OnSurf)
+  pure subroutine calcStressTensor(f, sigma)
     implicit none
 
     double precision, dimension(0:q - 1), intent(in) :: f
     double precision, intent(out) ::  sigma(2, 2)
-    type(lbmTriplet_t), intent(out) :: onSurf
+    ! type(lbmTriplet_t), intent(out) :: onSurf
     double precision:: u(2), tmp(3), rho
     integer:: i, j, a
 
@@ -536,9 +605,9 @@ contains
     u(1) = tmp(2)/rho
     u(2) = tmp(3)/rho
 
-    onSurf%r = rho
-    onSurf%u = u(1)
-    onSurf%v = u(2)
+    ! onSurf%r = rho
+    ! onSurf%u = u(1)
+    ! onSurf%v = u(2)
 
     do i = 1, 2
       do j = 1, 2
@@ -555,12 +624,12 @@ contains
 
   end subroutine calcStressTensor
 
-  pure subroutine calcStressTensor2(f, sigma, lbmVar)
+  pure subroutine calcStressTensor2(f, sigma)
     implicit none
 
     double precision, dimension(0:q - 1), intent(in) :: f
     double precision, intent(out) ::  sigma(2, 2)
-    type(lbmTriplet_t), intent(out) :: lbmVar
+    type(lbmTriplet_t) :: lbmVar
 
     double precision, dimension(0:q - 1) :: feq, fneq
     double precision:: tmp(3)
@@ -572,6 +641,7 @@ contains
 
     fneq = f - feq
 
+    sigma = d0
     do i = 1, 2
       do j = 1, 2
 
@@ -580,7 +650,7 @@ contains
           tmp(1) = tmp(1) + fneq(a)*(ci(a, i)*ci(a, j) - haf*(ci(a, 1)*ci(a, 1) + ci(a, 2)*ci(a, 2))*kdf(i, j))
         end do
 
-        sigma(i, j) = (d1 - haf*invTau)*tmp(1)
+        sigma(i, j) = -(d1 - haf*invTau)*tmp(1)
 
       end do
     end do
@@ -648,7 +718,7 @@ contains
     double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
     double precision:: x_xConst, y_xConst, x_yConst, y_yConst
     double precision:: dist_xConst, dist_yConst
-    integer::i, k, a, outDir, itmp(1), xConst, yConst
+    integer::i, a, outDir, itmp(1), xConst, yConst
     allocate (ptOnCircle(noOfPts))
 
     theta0 = d0
@@ -659,8 +729,8 @@ contains
       ptOnCircle(i + 1)%n0%x = xc_ + 0.5*dia_*cos(theta)
       ptOnCircle(i + 1)%n0%y = yc_ + 0.5*dia_*sin(theta)
 
-      ptOnCircle(i + 1)%unitVec%x = cos(theta)
-      ptOnCircle(i + 1)%unitVec%y = sin(theta)
+      ptOnCircle(i + 1)%uv%x = cos(theta)
+      ptOnCircle(i + 1)%uv%y = sin(theta)
 
       locBox(1)%x = ceiling(ptOnCircle(i + 1)%n0%x)
       locBox(2)%x = ceiling(ptOnCircle(i + 1)%n0%x)
@@ -675,7 +745,7 @@ contains
       do a = 1, 4
         dir%x = locBox(a)%x - ptOnCircle(i + 1)%n0%x
         dir%y = locBox(a)%y - ptOnCircle(i + 1)%n0%y
-        dirDotUnitVec(a) = (dir%x*ptOnCircle(i + 1)%unitVec%x + dir%y*ptOnCircle(i + 1)%unitVec%y) &
+        dirDotUnitVec(a) = (dir%x*ptOnCircle(i + 1)%uv%x + dir%y*ptOnCircle(i + 1)%uv%y) &
                            /(sqrt(dir%x**d2 + dir%y**d2))
       end do
 
@@ -686,7 +756,7 @@ contains
 
       ptOnCircle(i + 1)%n1%x = locBox(outDir)%x
       ptOnCircle(i + 1)%n1%y = locBox(outDir)%y
-      write (*, *) outDir, ptOnCircle(i + 1)%n1%x, ptOnCircle(i + 1)%n1%y
+      ! write (*, *) outDir, ptOnCircle(i + 1)%n1%x, ptOnCircle(i + 1)%n1%y
 
       xConst = int(ptOnCircle(i + 1)%n1%x) + int(sign(d1, dir%x))
       yconst = int(ptOnCircle(i + 1)%n1%y) + int(sign(d1, dir%y))
@@ -817,24 +887,26 @@ contains
 
   ! end function mulMatVec
 
-  ! pure subroutine linearExterp(b)
-  !   ! double precision, intent(in) :: x, y
-  !   type(box_t), intent(inout) ::  b
-  !   double precision:: x0x1, x2x1
+  pure subroutine linearExtInt(pt1, pt2, pt)
+    ! double precision, intent(in) :: x, y
+    type(triplet_t), intent(in) :: pt1, pt2
+    type(triplet_t), intent(inout) :: pt
+    double precision:: x0x1, x2x1
 
-  !   associate (f => b%fluidNode)
-  !   if (b%x /= f(1)%x) then
-  !     x0x1 = b%x - f(1)%x
-  !     x2x1 = f(2)%x - f(1)%x
-  !   else
-  !     x0x1 = b%y - f(1)%y
-  !     x2x1 = f(2)%y - f(1)%y
-  !   end if
+    if (pt%x /= pt1%x) then
+      x0x1 = pt%x - pt1%x
+      x2x1 = pt2%x - pt1%x
+    elseif (pt%y /= pt1%y) then
+      x0x1 = pt%y - pt1%y
+      x2x1 = pt2%y - pt1%y
+    else
+      x0x1 = 0.0d0
+      x2x1 = 1.0d0
+    end if
 
-  !   b%z = f(1)%z + x0x1*(f(2)%z - f(1)%z)/x2x1
-  !   end associate
+    pt%z = pt1%z + x0x1*(pt2%z - pt1%z)/x2x1
 
-  ! end subroutine linearExterp
+  end subroutine linearExtInt
 
   ! pure subroutine bilinearInterp(pt, box, err)
   !   type(triplet_t), intent(inout) :: pt

@@ -4,7 +4,7 @@
     {
       "label": "make",
       "type": "shell",
-      "command": "make",
+      "command": "make -B",
       "options": {
         "cwd": "${workspaceRoot}/stressIntegration/turekCyl2D1level1"
       }
