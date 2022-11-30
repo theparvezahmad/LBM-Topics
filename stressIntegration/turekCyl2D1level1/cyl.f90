@@ -84,10 +84,11 @@ program cyl
   end type
 
   type custom_t
+    integer::noOfRD
     type(doublet_t)::uv, force
-    type(ptWithTensorN0_t)::n0
-    type(ptWithTensorN1_t)::n1
-    type(ptWithTensorN2_t)::n2
+    type(ptWithTensorN0_t), dimension(3)::n0
+    type(ptWithTensorN1_t), dimension(3)::n1
+    type(ptWithTensorN2_t), dimension(3)::n2
   end type custom_t
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle
@@ -399,12 +400,12 @@ program cyl
 !=================working================================
     do i = 1, size(ptOnCircle)
 
-      dataPt1%x = ptOnCircle(i)%n2%b(1)%x
-      dataPt1%y = ptOnCircle(i)%n2%b(1)%y
-      dataPt2%x = ptOnCircle(i)%n2%b(2)%x
-      dataPt2%y = ptOnCircle(i)%n2%b(2)%y
-      dataPt%x = ptOnCircle(i)%n2%x
-      dataPt%y = ptOnCircle(i)%n2%y
+      dataPt1%x = ptOnCircle(i)%n2(1)%b(1)%x
+      dataPt1%y = ptOnCircle(i)%n2(1)%b(1)%y
+      dataPt2%x = ptOnCircle(i)%n2(1)%b(2)%x
+      dataPt2%y = ptOnCircle(i)%n2(1)%b(2)%y
+      dataPt%x = ptOnCircle(i)%n2(1)%x
+      dataPt%y = ptOnCircle(i)%n2(1)%y
       do a = 0, q - 1
         dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
         dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
@@ -413,22 +414,22 @@ program cyl
       end do
 
       call calcStressTensor(tmpA, sigma)
-      ptOnCircle(i)%n2%st = sigma
-      call calcStressTensor(f(:, int(ptOnCircle(i)%n1%x), int(ptOnCircle(i)%n1%y)), sigma)
-      ptOnCircle(i)%n1%st = sigma
+      ptOnCircle(i)%n2(1)%st = sigma
+      call calcStressTensor(f(:, int(ptOnCircle(i)%n1(1)%x), int(ptOnCircle(i)%n1(1)%y)), sigma)
+      ptOnCircle(i)%n1(1)%st = sigma
 
-      dataPt1%x = ptOnCircle(i)%n2%x
-      dataPt1%y = ptOnCircle(i)%n2%y
-      dataPt2%x = ptOnCircle(i)%n1%x
-      dataPt2%y = ptOnCircle(i)%n1%y
-      dataPt%x = ptOnCircle(i)%n0%x
-      dataPt%y = ptOnCircle(i)%n0%y
+      dataPt1%x = ptOnCircle(i)%n2(1)%x
+      dataPt1%y = ptOnCircle(i)%n2(1)%y
+      dataPt2%x = ptOnCircle(i)%n1(1)%x
+      dataPt2%y = ptOnCircle(i)%n1(1)%y
+      dataPt%x = ptOnCircle(i)%n0(1)%x
+      dataPt%y = ptOnCircle(i)%n0(1)%y
       do k = 1, 2
         do p = 1, 2
-          dataPt1%z = ptOnCircle(i)%n2%st(k, p)
-          dataPt2%z = ptOnCircle(i)%n1%st(k, p)
+          dataPt1%z = ptOnCircle(i)%n2(1)%st(k, p)
+          dataPt2%z = ptOnCircle(i)%n1(1)%st(k, p)
           call linearExtInt(dataPt1, dataPt2, dataPt)
-          ptOnCircle(i)%n0%st(k, p) = dataPt%z
+          ptOnCircle(i)%n0(1)%st(k, p) = dataPt%z
         end do
       end do
 
@@ -479,9 +480,9 @@ program cyl
       ! call calcStressTensor2(ptOnCircle(i)%Pt%z, sigma, onSurf)
 
       associate (poc => ptOnCircle(i))
-        poc%force%x = poc%n0%st(1, 1)*poc%uv%x + poc%n0%st(1, 2)*poc%uv%y
+        poc%force%x = poc%n0(1)%st(1, 1)*poc%uv%x + poc%n0(1)%st(1, 2)*poc%uv%y
         ! - onSurf%r*onSurf%u*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
-        poc%force%y = poc%n0%st(2, 1)*poc%uv%x + poc%n0%st(2, 2)*poc%uv%y
+        poc%force%y = poc%n0(1)%st(2, 1)*poc%uv%x + poc%n0(1)%st(2, 2)*poc%uv%y
         ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
       end associate
 
@@ -718,105 +719,114 @@ contains
     double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
     double precision:: x_xConst, y_xConst, x_yConst, y_yConst
     double precision:: dist_xConst, dist_yConst
-    integer::i, a, outDir, itmp(1), xConst, yConst
+    integer::i, a, outDir(3), itmp(1), xConst, yConst
     allocate (ptOnCircle(noOfPts))
 
     theta0 = d0
     dTheta = 2*pi/noOfPts
 
     do i = 0, noOfPts - 1
-      theta = theta0 + i*dTheta
-      ptOnCircle(i + 1)%n0%x = xc_ + 0.5*dia_*cos(theta)
-      ptOnCircle(i + 1)%n0%y = yc_ + 0.5*dia_*sin(theta)
+      associate (poc => ptOnCircle(i + 1))
+        theta = theta0 + i*dTheta
+        poc%n0(1)%x = xc_ + 0.5*dia_*cos(theta)
+        poc%n0(1)%y = yc_ + 0.5*dia_*sin(theta)
 
-      ptOnCircle(i + 1)%uv%x = cos(theta)
-      ptOnCircle(i + 1)%uv%y = sin(theta)
+        poc%uv%x = cos(theta)
+        poc%uv%y = sin(theta)
 
-      locBox(1)%x = ceiling(ptOnCircle(i + 1)%n0%x)
-      locBox(2)%x = ceiling(ptOnCircle(i + 1)%n0%x)
-      locBox(3)%x = floor(ptOnCircle(i + 1)%n0%x)
-      locBox(4)%x = floor(ptOnCircle(i + 1)%n0%x)
+        locBox(1)%x = ceiling(poc%n0(1)%x)
+        locBox(2)%x = ceiling(poc%n0(1)%x)
+        locBox(3)%x = floor(poc%n0(1)%x)
+        locBox(4)%x = floor(poc%n0(1)%x)
 
-      locBox(1)%y = floor(ptOnCircle(i + 1)%n0%y)
-      locBox(2)%y = ceiling(ptOnCircle(i + 1)%n0%y)
-      locBox(3)%y = ceiling(ptOnCircle(i + 1)%n0%y)
-      locBox(4)%y = floor(ptOnCircle(i + 1)%n0%y)
+        locBox(1)%y = floor(poc%n0(1)%y)
+        locBox(2)%y = ceiling(poc%n0(1)%y)
+        locBox(3)%y = ceiling(poc%n0(1)%y)
+        locBox(4)%y = floor(poc%n0(1)%y)
 
-      do a = 1, 4
-        dir%x = locBox(a)%x - ptOnCircle(i + 1)%n0%x
-        dir%y = locBox(a)%y - ptOnCircle(i + 1)%n0%y
-        dirDotUnitVec(a) = (dir%x*ptOnCircle(i + 1)%uv%x + dir%y*ptOnCircle(i + 1)%uv%y) &
-                           /(sqrt(dir%x**d2 + dir%y**d2))
-      end do
+        ptOnCircle%noOfRD = 0
+        do a = 1, 4
+          dir%x = locBox(a)%x - poc%n0(1)%x
+          dir%y = locBox(a)%y - poc%n0(1)%y
+          dirDotUnitVec(a) = (dir%x*poc%uv%x + dir%y*poc%uv%y) &
+                            /(sqrt(dir%x**d2 + dir%y**d2))
 
-      itmp = maxloc(dirDotUnitVec)
-      outDir = itmp(1)
-      dir%x = locBox(outDir)%x - ptOnCircle(i + 1)%n0%x
-      dir%y = locBox(outDir)%y - ptOnCircle(i + 1)%n0%y
+          if (dirDotUnitVec(a) .gt. 0) then
+            poc%noOfRD = ptOnCircle(i+1)%noOfRD + 1
+            outDir(poc%noOfRD)=a
+          end if
+        end do
 
-      ptOnCircle(i + 1)%n1%x = locBox(outDir)%x
-      ptOnCircle(i + 1)%n1%y = locBox(outDir)%y
-      ! write (*, *) outDir, ptOnCircle(i + 1)%n1%x, ptOnCircle(i + 1)%n1%y
+        ! itmp = maxloc(dirDotUnitVec)
+        ! outDir = itmp(1)
+        do k=1,poc%noOfRD
+          dir%x = locBox(outDir(k))%x - poc%n0(k)%x
+          dir%y = locBox(outDir(k))%y - poc%n0(k)%y
 
-      xConst = int(ptOnCircle(i + 1)%n1%x) + int(sign(d1, dir%x))
-      yconst = int(ptOnCircle(i + 1)%n1%y) + int(sign(d1, dir%y))
+          poc%n1(k)%x = locBox(outDir(k))%x
+          poc%n1(k)%y = locBox(outDir(k))%y
+          ! write (*, *) outDir, poc%n1(1)%x, poc%n1(1)%y
 
-      x0 = ptOnCircle(i + 1)%n0%x
-      y0 = ptOnCircle(i + 1)%n0%y
-      x1 = ptOnCircle(i + 1)%n1%x
-      y1 = ptOnCircle(i + 1)%n1%y
+          xConst = int(poc%n1(k)%x) + int(sign(d1, dir%x))
+          yconst = int(poc%n1(k)%y) + int(sign(d1, dir%y))
 
-      a1 = y1 - y0
-      b1 = -(x1 - x0)
-      c1 = (y1 - y0)*x0 - (x1 - x0)*y0
+          x0 = poc%n0(k)%x
+          y0 = poc%n0(k)%y
+          x1 = poc%n1(k)%x
+          y1 = poc%n1(k)%y
 
-      a2 = 1.0
-      b2 = 0.0
-      c2 = xConst
+          a1 = y1 - y0
+          b1 = -(x1 - x0)
+          c1 = (y1 - y0)*x0 - (x1 - x0)*y0
 
-      determinant = a1*b2 - a2*b1
+          a2 = 1.0
+          b2 = 0.0
+          c2 = xConst
 
-      if (abs(determinant) < 0.0001) then
-        x_xConst = xConst
-        y_xConst = 99999
-      else
-        x_xConst = (c1*b2 - c2*b1)/determinant
-        y_xConst = (a1*c2 - a2*c1)/determinant
-      end if
+          determinant = a1*b2 - a2*b1
 
-      a2 = 0.0
-      b2 = 1.0
-      c2 = yConst
+          if (abs(determinant) < 0.0001) then
+            x_xConst = xConst
+            y_xConst = 99999
+          else
+            x_xConst = (c1*b2 - c2*b1)/determinant
+            y_xConst = (a1*c2 - a2*c1)/determinant
+          end if
 
-      determinant = a1*b2 - a2*b1
+          a2 = 0.0
+          b2 = 1.0
+          c2 = yConst
 
-      if (abs(determinant) < 0.0001) then
-        x_yConst = 99999
-        y_yConst = yConst
-      else
-        x_yConst = (c1*b2 - c2*b1)/determinant
-        y_yConst = (a1*c2 - a2*c1)/determinant
-      end if
+          determinant = a1*b2 - a2*b1
 
-      dist_xConst = sqrt((x_xConst - x0)**d2 + (y_xConst - y0)**d2)
-      dist_yConst = sqrt((x_yConst - x0)**d2 + (y_yConst - y0)**d2)
+          if (abs(determinant) < 0.0001) then
+            x_yConst = 99999
+            y_yConst = yConst
+          else
+            x_yConst = (c1*b2 - c2*b1)/determinant
+            y_yConst = (a1*c2 - a2*c1)/determinant
+          end if
 
-      if (dist_xConst <= dist_yConst) then
-        ptOnCircle(i + 1)%n2%x = x_xConst
-        ptOnCircle(i + 1)%n2%y = y_xConst
-        ptOnCircle(i + 1)%n2%b(1)%x = x_xConst
-        ptOnCircle(i + 1)%n2%b(1)%y = floor(y_xConst)
-        ptOnCircle(i + 1)%n2%b(2)%x = x_xConst
-        ptOnCircle(i + 1)%n2%b(2)%y = ceiling(y_xConst)
-      else
-        ptOnCircle(i + 1)%n2%x = x_yConst
-        ptOnCircle(i + 1)%n2%y = y_yConst
-        ptOnCircle(i + 1)%n2%b(1)%x = floor(x_yConst)
-        ptOnCircle(i + 1)%n2%b(1)%y = y_yConst
-        ptOnCircle(i + 1)%n2%b(2)%x = ceiling(x_yConst)
-        ptOnCircle(i + 1)%n2%b(2)%y = y_yConst
-      end if
+          dist_xConst = sqrt((x_xConst - x0)**d2 + (y_xConst - y0)**d2)
+          dist_yConst = sqrt((x_yConst - x0)**d2 + (y_yConst - y0)**d2)
 
+          if (dist_xConst <= dist_yConst) then
+            poc%n2(k)%x = x_xConst
+            poc%n2(k)%y = y_xConst
+            poc%n2(k)%b(1)%x = x_xConst
+            poc%n2(k)%b(1)%y = floor(y_xConst)
+            poc%n2(k)%b(2)%x = x_xConst
+            poc%n2(k)%b(2)%y = ceiling(y_xConst)
+          else
+            poc%n2(k)%x = x_yConst
+            poc%n2(k)%y = y_yConst
+            poc%n2(k)%b(1)%x = floor(x_yConst)
+            poc%n2(k)%b(1)%y = y_yConst
+            poc%n2(k)%b(2)%x = ceiling(x_yConst)
+            poc%n2(k)%b(2)%y = y_yConst
+          end if
+        end do
+      end associate
     end do
 
   end subroutine createDataStructOnCircle
