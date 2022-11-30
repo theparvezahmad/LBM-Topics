@@ -4,13 +4,13 @@ program cyl
   !Underscore Variables are in LBM units
 
   integer, parameter:: &
-    chanH_ = 205, &
+    chanH_ = 82, &
     dim = 2, &
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
     dispFreq = 100, &
-    noOfPtOnCircle = 400
+    noOfPtOnCircle = 8
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -98,8 +98,8 @@ program cyl
   integer::nx, ny
   double precision, dimension(noOfPtOnCircle):: forceX, forceY
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2)
-  integer:: i, j, k, p, a, a1, t_, ia, ja, solnumber
+  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2),avgST(2,2)
+  integer:: i,iRD, j, k, p, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
@@ -116,7 +116,7 @@ program cyl
 !===Conversion Factors===
   Clen = chanH/chanH_
   Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.00025d0
+  Ct = dia/uMean*0.0025d0
   Cnu = Clen**2.0d0/Ct
   CVel = Clen/Ct
   ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
@@ -399,43 +399,53 @@ program cyl
     ! stop
 !=================working================================
     do i = 1, size(ptOnCircle)
+      associate (poc => ptOnCircle(i))
 
-      dataPt1%x = ptOnCircle(i)%n2(1)%b(1)%x
-      dataPt1%y = ptOnCircle(i)%n2(1)%b(1)%y
-      dataPt2%x = ptOnCircle(i)%n2(1)%b(2)%x
-      dataPt2%y = ptOnCircle(i)%n2(1)%b(2)%y
-      dataPt%x = ptOnCircle(i)%n2(1)%x
-      dataPt%y = ptOnCircle(i)%n2(1)%y
-      do a = 0, q - 1
-        dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
-        dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
-        call linearExtInt(dataPt1, dataPt2, dataPt)
-        tmpA(a) = dataPt%z
+      do iRD=1,poc%noOfRD
+
+        dataPt1%x = poc%n2(iRD)%b(1)%x
+        dataPt1%y = poc%n2(iRD)%b(1)%y
+        dataPt2%x = poc%n2(iRD)%b(2)%x
+        dataPt2%y = poc%n2(iRD)%b(2)%y
+        dataPt%x = poc%n2(iRD)%x
+        dataPt%y = poc%n2(iRD)%y
+        do a = 0, q - 1
+          dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
+          dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
+          call linearExtInt(dataPt1, dataPt2, dataPt)
+          tmpA(a) = dataPt%z
+        end do
+
+        call calcStressTensor(tmpA, sigma)
+        poc%n2(iRD)%st = sigma
+        call calcStressTensor(f(:, int(poc%n1(iRD)%x), int(poc%n1(iRD)%y)), sigma)
+        poc%n1(iRD)%st = sigma
+
+        dataPt1%x = poc%n2(iRD)%x
+        dataPt1%y = poc%n2(iRD)%y
+        dataPt2%x = poc%n1(iRD)%x
+        dataPt2%y = poc%n1(iRD)%y
+        dataPt%x = poc%n0(iRD)%x
+        dataPt%y = poc%n0(iRD)%y
+        do k = 1, 2
+          do p = 1, 2
+            dataPt1%z = poc%n2(iRD)%st(k, p)
+            dataPt2%z = poc%n1(iRD)%st(k, p)
+            call linearExtInt(dataPt1, dataPt2, dataPt)
+            poc%n0(iRD)%st(k, p) = dataPt%z
+          end do
+        end do
+
       end do
-
-      call calcStressTensor(tmpA, sigma)
-      ptOnCircle(i)%n2(1)%st = sigma
-      call calcStressTensor(f(:, int(ptOnCircle(i)%n1(1)%x), int(ptOnCircle(i)%n1(1)%y)), sigma)
-      ptOnCircle(i)%n1(1)%st = sigma
-
-      dataPt1%x = ptOnCircle(i)%n2(1)%x
-      dataPt1%y = ptOnCircle(i)%n2(1)%y
-      dataPt2%x = ptOnCircle(i)%n1(1)%x
-      dataPt2%y = ptOnCircle(i)%n1(1)%y
-      dataPt%x = ptOnCircle(i)%n0(1)%x
-      dataPt%y = ptOnCircle(i)%n0(1)%y
+      
       do k = 1, 2
         do p = 1, 2
-          dataPt1%z = ptOnCircle(i)%n2(1)%st(k, p)
-          dataPt2%z = ptOnCircle(i)%n1(1)%st(k, p)
-          call linearExtInt(dataPt1, dataPt2, dataPt)
-          ptOnCircle(i)%n0(1)%st(k, p) = dataPt%z
+          avgST(k,p)=sum(poc%n0(1:poc%noOfRD)%st(k,p))/poc%noOfRD
         end do
       end do
-
       ! do k = 1, 4
 
-      !   associate (lf => ptOnCircle(i)%box(k)%fluidNode, lb => ptOnCircle(i)%box(k))
+      !   associate (lf => poc%box(k)%fluidNode, lb => poc%box(k))
 
       !     ! lf(2)%x = 45.0d0
       !     ! lf(2)%y = 44.0d0
@@ -475,20 +485,19 @@ program cyl
       ! write (*, *) ptOnCircle(1)%Pt%z
       ! stop
 
-      ! call bilinearInterp(ptOnCircle(i)%Pt, ptOnCircle(i)%box)
+      ! call bilinearInterp(poc%Pt, poc%box)
 
-      ! call calcStressTensor2(ptOnCircle(i)%Pt%z, sigma, onSurf)
+      ! call calcStressTensor2(poc%Pt%z, sigma, onSurf)
 
-      associate (poc => ptOnCircle(i))
-        poc%force%x = poc%n0(1)%st(1, 1)*poc%uv%x + poc%n0(1)%st(1, 2)*poc%uv%y
+        poc%force%x = avgST(1, 1)*poc%uv%x + avgST(1, 2)*poc%uv%y
         ! - onSurf%r*onSurf%u*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
-        poc%force%y = poc%n0(1)%st(2, 1)*poc%uv%x + poc%n0(1)%st(2, 2)*poc%uv%y
+        poc%force%y = avgST(2, 1)*poc%uv%x + avgST(2, 2)*poc%uv%y
         ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
+        
+        if (t_ == 100000) then
+          write (*, *) i, poc%force
+        end if
       end associate
-
-      if (t_ == 25000) then
-        write (*, *) i, ptOnCircle(i)%force
-      end if
     end do
 
     ! ptOnCircle%force%x = 1.75
@@ -710,7 +719,7 @@ contains
     end if
   end function kdf
 
-  subroutine createDataStructOnCircle(noOfPts, ptOnCircle)
+  pure subroutine createDataStructOnCircle(noOfPts, ptOnCircle)
     integer, intent(in) :: noOfPts
     type(custom_t), allocatable, dimension(:), intent(out)::ptOnCircle
     type(doublet_t)::dir
@@ -719,7 +728,7 @@ contains
     double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
     double precision:: x_xConst, y_xConst, x_yConst, y_yConst
     double precision:: dist_xConst, dist_yConst
-    integer::i, a, outDir(3), itmp(1), xConst, yConst
+    integer::i, a, k, outDir(3), xConst, yConst!, itmp(1)
     allocate (ptOnCircle(noOfPts))
 
     theta0 = d0
@@ -744,7 +753,7 @@ contains
         locBox(3)%y = ceiling(poc%n0(1)%y)
         locBox(4)%y = floor(poc%n0(1)%y)
 
-        ptOnCircle%noOfRD = 0
+        poc%noOfRD = 0
         do a = 1, 4
           dir%x = locBox(a)%x - poc%n0(1)%x
           dir%y = locBox(a)%y - poc%n0(1)%y
@@ -752,7 +761,7 @@ contains
                             /(sqrt(dir%x**d2 + dir%y**d2))
 
           if (dirDotUnitVec(a) .gt. 0) then
-            poc%noOfRD = ptOnCircle(i+1)%noOfRD + 1
+            poc%noOfRD = poc%noOfRD + 1
             outDir(poc%noOfRD)=a
           end if
         end do
