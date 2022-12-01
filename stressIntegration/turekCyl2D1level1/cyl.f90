@@ -10,7 +10,7 @@ program cyl
     time_ = 100000, &
     noOfSnaps = 5, &
     dispFreq = 100, &
-    noOfPtOnCircle = 8
+    noOfPtOnCircle = 400
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -98,8 +98,8 @@ program cyl
   integer::nx, ny
   double precision, dimension(noOfPtOnCircle):: forceX, forceY
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
-  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2),avgST(2,2)
-  integer:: i,iRD, j, k, p, a, a1, t_, ia, ja, solnumber
+  double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2), avgST(2, 2)
+  integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber
   integer, allocatable, dimension(:, :)::isn
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
@@ -401,99 +401,99 @@ program cyl
     do i = 1, size(ptOnCircle)
       associate (poc => ptOnCircle(i))
 
-      do iRD=1,poc%noOfRD
+        do iRD = 1, poc%noOfRD
 
-        dataPt1%x = poc%n2(iRD)%b(1)%x
-        dataPt1%y = poc%n2(iRD)%b(1)%y
-        dataPt2%x = poc%n2(iRD)%b(2)%x
-        dataPt2%y = poc%n2(iRD)%b(2)%y
-        dataPt%x = poc%n2(iRD)%x
-        dataPt%y = poc%n2(iRD)%y
-        do a = 0, q - 1
-          dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
-          dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
-          call linearExtInt(dataPt1, dataPt2, dataPt)
-          tmpA(a) = dataPt%z
+          dataPt1%x = poc%n2(iRD)%b(1)%x
+          dataPt1%y = poc%n2(iRD)%b(1)%y
+          dataPt2%x = poc%n2(iRD)%b(2)%x
+          dataPt2%y = poc%n2(iRD)%b(2)%y
+          dataPt%x = poc%n2(iRD)%x
+          dataPt%y = poc%n2(iRD)%y
+          do a = 0, q - 1
+            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
+            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
+            call linearExtInt(dataPt1, dataPt2, dataPt)
+            tmpA(a) = dataPt%z
+          end do
+
+          call calcStressTensor2(tmpA, sigma)
+          poc%n2(iRD)%st = sigma
+          call calcStressTensor2(f(:, int(poc%n1(iRD)%x), int(poc%n1(iRD)%y)), sigma)
+          poc%n1(iRD)%st = sigma
+
+          dataPt1%x = poc%n2(iRD)%x
+          dataPt1%y = poc%n2(iRD)%y
+          dataPt2%x = poc%n1(iRD)%x
+          dataPt2%y = poc%n1(iRD)%y
+          dataPt%x = poc%n0(iRD)%x
+          dataPt%y = poc%n0(iRD)%y
+          do k = 1, 2
+            do p = 1, 2
+              dataPt1%z = poc%n2(iRD)%st(k, p)
+              dataPt2%z = poc%n1(iRD)%st(k, p)
+              call linearExtInt(dataPt1, dataPt2, dataPt)
+              poc%n0(iRD)%st(k, p) = dataPt%z
+            end do
+          end do
+
         end do
 
-        call calcStressTensor(tmpA, sigma)
-        poc%n2(iRD)%st = sigma
-        call calcStressTensor(f(:, int(poc%n1(iRD)%x), int(poc%n1(iRD)%y)), sigma)
-        poc%n1(iRD)%st = sigma
-
-        dataPt1%x = poc%n2(iRD)%x
-        dataPt1%y = poc%n2(iRD)%y
-        dataPt2%x = poc%n1(iRD)%x
-        dataPt2%y = poc%n1(iRD)%y
-        dataPt%x = poc%n0(iRD)%x
-        dataPt%y = poc%n0(iRD)%y
         do k = 1, 2
           do p = 1, 2
-            dataPt1%z = poc%n2(iRD)%st(k, p)
-            dataPt2%z = poc%n1(iRD)%st(k, p)
-            call linearExtInt(dataPt1, dataPt2, dataPt)
-            poc%n0(iRD)%st(k, p) = dataPt%z
+            avgST(k, p) = sum(poc%n0(1:poc%noOfRD)%st(k, p))/poc%noOfRD
           end do
         end do
+        ! do k = 1, 4
 
-      end do
-      
-      do k = 1, 2
-        do p = 1, 2
-          avgST(k,p)=sum(poc%n0(1:poc%noOfRD)%st(k,p))/poc%noOfRD
-        end do
-      end do
-      ! do k = 1, 4
+        !   associate (lf => poc%box(k)%fluidNode, lb => poc%box(k))
 
-      !   associate (lf => poc%box(k)%fluidNode, lb => poc%box(k))
+        !     ! lf(2)%x = 45.0d0
+        !     ! lf(2)%y = 44.0d0
+        !     ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
 
-      !     ! lf(2)%x = 45.0d0
-      !     ! lf(2)%y = 44.0d0
-      !     ! lf(2)%z = [20.0d0, 20.0d0, 20.0d0, 30.0d0, 20.0d0, 20.0d0, 20.0d0, 20.0d0, 200.0d0]
+        !     ! lf(1)%x = 45.0d0
+        !     ! lf(1)%y = 45.0d0
+        !     ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
 
-      !     ! lf(1)%x = 45.0d0
-      !     ! lf(1)%y = 45.0d0
-      !     ! lf(1)%z = [15.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+        !     ! lb%x = 45.0d0
+        !     ! lb%y = 46.0d0
+        !     ! call linearExterp(lb)
+        !     ! write (*, *) "Hello", lb%z
+        !     ! stop
 
-      !     ! lb%x = 45.0d0
-      !     ! lb%y = 46.0d0
-      !     ! call linearExterp(lb)
-      !     ! write (*, *) "Hello", lb%z
-      !     ! stop
+        !     if (lb%isInside) then
+        !       lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
+        !       lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
+        !       call linearExterp(lb)
+        !     else
+        !       lb%z = f(:, int(lb%x), int(lb%y))
+        !     end if
 
-      !     if (lb%isInside) then
-      !       lf(1)%z = f(:, int(lf(1)%x), int(lf(1)%y))
-      !       lf(2)%z = f(:, int(lf(2)%x), int(lf(2)%y))
-      !       call linearExterp(lb)
-      !     else
-      !       lb%z = f(:, int(lb%x), int(lb%y))
-      !     end if
+        !   end associate
 
-      !   end associate
+        ! end do
 
-      ! end do
+        ! ptOnCircle(1)%box(1)%z = [10.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+        ! ptOnCircle(1)%box(2)%z = [20.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+        ! ptOnCircle(1)%box(3)%z = [30.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+        ! ptOnCircle(1)%box(4)%z = [40.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
+        ! ! ptOnCircle(1)%Pt%x = 51
+        ! ! ptOnCircle(1)%Pt%y = 42
+        ! call bilinearInterp(ptOnCircle(1)%Pt, ptOnCircle(1)%box)
+        ! write (*, *) ptOnCircle(1)%Pt%x
+        ! write (*, *) ptOnCircle(1)%Pt%y
+        ! write (*, *) ptOnCircle(1)%Pt%z
+        ! stop
 
-      ! ptOnCircle(1)%box(1)%z = [10.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-      ! ptOnCircle(1)%box(2)%z = [20.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-      ! ptOnCircle(1)%box(3)%z = [30.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-      ! ptOnCircle(1)%box(4)%z = [40.0d0, 20.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0, 100.0d0]
-      ! ! ptOnCircle(1)%Pt%x = 51
-      ! ! ptOnCircle(1)%Pt%y = 42
-      ! call bilinearInterp(ptOnCircle(1)%Pt, ptOnCircle(1)%box)
-      ! write (*, *) ptOnCircle(1)%Pt%x
-      ! write (*, *) ptOnCircle(1)%Pt%y
-      ! write (*, *) ptOnCircle(1)%Pt%z
-      ! stop
+        ! call bilinearInterp(poc%Pt, poc%box)
 
-      ! call bilinearInterp(poc%Pt, poc%box)
-
-      ! call calcStressTensor2(poc%Pt%z, sigma, onSurf)
+        ! call calcStressTensor2(poc%Pt%z, sigma, onSurf)
 
         poc%force%x = avgST(1, 1)*poc%uv%x + avgST(1, 2)*poc%uv%y
         ! - onSurf%r*onSurf%u*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
         poc%force%y = avgST(2, 1)*poc%uv%x + avgST(2, 2)*poc%uv%y
         ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
-        
+
         if (t_ == 100000) then
           write (*, *) i, poc%force
         end if
@@ -513,7 +513,7 @@ program cyl
     totalForce%x = trapIntegrate(forceX)
     totalForce%y = trapIntegrate(forceY)
 
-    if (t_ == 25000) then
+    if (t_ == 100000) then
       write (*, *) '======================================'
       write (*, *) totalForce%x, sum(forceX)
       write (*, *) 0.5*rhoF_*uMean_*uMean_*dia_
@@ -737,8 +737,8 @@ contains
     do i = 0, noOfPts - 1
       associate (poc => ptOnCircle(i + 1))
         theta = theta0 + i*dTheta
-        poc%n0(1)%x = xc_ + 0.5*dia_*cos(theta)
-        poc%n0(1)%y = yc_ + 0.5*dia_*sin(theta)
+        poc%n0(:)%x = xc_ + 0.5*dia_*cos(theta)
+        poc%n0(:)%y = yc_ + 0.5*dia_*sin(theta)
 
         poc%uv%x = cos(theta)
         poc%uv%y = sin(theta)
@@ -753,22 +753,26 @@ contains
         locBox(3)%y = ceiling(poc%n0(1)%y)
         locBox(4)%y = floor(poc%n0(1)%y)
 
-        poc%noOfRD = 0
         do a = 1, 4
           dir%x = locBox(a)%x - poc%n0(1)%x
           dir%y = locBox(a)%y - poc%n0(1)%y
           dirDotUnitVec(a) = (dir%x*poc%uv%x + dir%y*poc%uv%y) &
-                            /(sqrt(dir%x**d2 + dir%y**d2))
+                             /(sqrt(dir%x**d2 + dir%y**d2))
+        end do
 
-          if (dirDotUnitVec(a) .gt. 0) then
+        poc%noOfRD = 0
+        do a = 1, 4
+          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
+          if (dirDotUnitVec(a) .gt. d0) then
             poc%noOfRD = poc%noOfRD + 1
-            outDir(poc%noOfRD)=a
+            outDir(poc%noOfRD) = a
+            ! exit
           end if
         end do
 
         ! itmp = maxloc(dirDotUnitVec)
         ! outDir = itmp(1)
-        do k=1,poc%noOfRD
+        do k = 1, poc%noOfRD
           dir%x = locBox(outDir(k))%x - poc%n0(k)%x
           dir%y = locBox(outDir(k))%y - poc%n0(k)%y
 
