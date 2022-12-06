@@ -99,8 +99,9 @@ program cyl
   double precision, dimension(noOfPtOnCircle):: forceX, forceY
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2), avgST(2, 2)
-  integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber
-  integer, allocatable, dimension(:, :)::isn
+  integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber, cnt
+  double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), chi, ubfx, ubfy, uwx, uwy
+  integer, allocatable, dimension(:, :)::isn, wb
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
   double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy, tmpA
@@ -148,6 +149,7 @@ program cyl
   ! write (*, *) 'Aborted for Checking'; stop
 !----------------------------------------------------------------------
   allocate (isn(nx + 2, ny + 2))
+  allocate (wb(nx + 2, ny + 2))
   allocate (ux(nx + 2, ny + 2))
   allocate (uy(nx + 2, ny + 2))
   allocate (rho(nx + 2, ny + 2))
@@ -221,6 +223,46 @@ program cyl
 
     end do
   end do
+  !------------------------------------------------------------------
+  cnt = 0
+  do i = 2, nx + 1
+    do j = 2, ny + 1
+      if (isn(i, j) == 0) then
+        do a = 0, q - 1
+          ia = i + ex(a)
+          ja = j + ey(a)
+          if (isn(ia, ja) == 1) then !Cylinder
+            wb(ia, ja) = 1
+            i_ = i
+            j_ = j
+            ia_ = ia
+            ja_ = ja
+            ii = (i_ + ia_)/2.0d0
+            jj = (j_ + ja_)/2.0d0
+            !printf("%s\n","A" )
+            do while (dabs((ii - xc_)*(ii - xc_) + (jj - yc_)*(jj - yc_) - dia_*dia_/4.0d0) .gt. 0.001d0)
+              !printf("%s\n","in" )
+              if ((ii - xc_)*(ii - xc_) + (jj - yc_)*(jj - yc_) - dia_*dia_/4.0d0 .le. 0.0d0) then
+                ia_ = ii
+                ja_ = jj
+              else
+                i_ = ii
+                j_ = jj
+              end if
+
+              ii = (i_ + ia_)/2.0d0
+              jj = (j_ + ja_)/2.0d0
+            end do
+
+            cnt = cnt + 1
+            Delta(cnt) = dsqrt((i - ii)*(i - ii) + dble(j - jj)*(j - jj))/dsqrt(dble(i - ia)*(i - ia) + dble(j - ja)*(j - ja))
+            ! write(*,'(6(I4),3(F8.4))') cnt,a,i,j,ia,ja,ii,jj,Delta(cnt)
+          end if
+        end do
+      end if
+    end do
+  end do
+  ! Delta = 0.5d0;
 
   call createDataStructOnCircle(noOfPtOnCircle, ptOnCircle)
 
@@ -263,6 +305,54 @@ program cyl
           feq = wt(a)*rho(i, j)*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
           ft(a, i, j) = f(a, i, j) - (f(a, i, j) - feq)/tau !collision
         end do
+      end do
+    end do
+!----------------------------------------------------------------------
+    fx(2) = d0
+    fy(2) = d0
+    uwx = d0
+    uwy = d0
+    cnt = 0
+    do i = 2, nx + 1 !BC
+      do j = 2, ny + 1
+        if (isn(i, j) .eq. 0) then
+
+          do a = 0, q - 1
+
+            ia = i + ex(a)
+            ja = j + ey(a)
+
+            if (isn(ia, ja) .eq. 1) then !structure
+              cnt = cnt + 1
+              if (Delta(cnt) .ge. d0 .and. Delta(cnt) .lt. 0.5d0) then
+                chi = (2.0d0*Delta(cnt) - 1.0d0)/(tau - 2.0d0)
+                ubfx = ux(i - ex(a), j - ey(a))
+                ubfy = uy(i - ex(a), j - ey(a))
+              end if
+
+              if (Delta(cnt) .ge. 0.5d0 .and. Delta(cnt) .lt. 1.0d0) then
+                chi = (2.0d0*Delta(cnt) - 1.0d0)/(tau + 0.5d0)
+                ubfx = 0.5d0*(2.0d0*Delta(cnt) - 3.0d0)/Delta(cnt)*ux(i, j) + 1.5d0*uwx/Delta(cnt)
+                ubfy = 0.5d0*(2.0d0*Delta(cnt) - 3.0d0)/Delta(cnt)*uy(i, j) + 1.5d0*uwy/Delta(cnt)
+              end if
+
+              tmp1 = ux(i, j)*ex(a) + uy(i, j)*ey(a)
+              tmp2 = ux(i, j)*ux(i, j) + uy(i, j)*uy(i, j)
+              feq = wt(a)*rho(i, j)*(1.0d0 + 3.0d0*tmp1 + 4.5d0*tmp1*tmp1 - 1.5d0*tmp2)
+              ft(kb(a), ia, ja) = ft(a, i, j) - chi*(ft(a, i, j) - feq) + &
+                                  wt(a)*rho(i, j)*3.0d0*(ex(a)*(chi*(ubfx - ux(i, j)) - 2.0d0*uwx) + &
+                                                         ey(a)*(chi*(ubfy - uy(i, j)) - 2.0d0*uwy))
+
+              fx(2) = fx(2) + ex(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
+              fy(2) = fy(2) + ey(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
+            end if
+
+            if (isn(ia, ja) .eq. 2) then !wall
+              f(kb(a), i, j) = ft(a, i, j)
+            end if
+
+          end do
+        end if
       end do
     end do
 !----------------------------------------------------------------------
@@ -520,34 +610,6 @@ program cyl
     end if
 
 !=================working================================
-
-    fx(2) = d0
-    fy(2) = d0
-    do i = 2, nx + 1 !BC
-      do j = 2, ny + 1
-        if (isn(i, j) .eq. 0) then
-
-          do a = 0, q - 1
-
-            ia = i + ex(a)
-            ja = j + ey(a)
-
-            if (isn(ia, ja) .eq. 1) then !structure
-              f(kb(a), i, j) = ft(a, i, j)
-              f(a, ia, ja) = ft(kb(a), ia, ja)
-              fx(2) = fx(2) + ex(a)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
-              fy(2) = fy(2) + ey(a)*2.0*(-ft(kb(a), ia, ja) + ft(a, i, j))
-            end if
-
-            if (isn(ia, ja) .eq. 2) then !wall
-              f(kb(a), i, j) = ft(a, i, j)
-            end if
-
-          end do
-        end if
-      end do
-    end do
-!----------------------------------------------------------------------
     fx_t = 0.5*(fx(1) + fx(2))
     fy_t = 0.5*(fy(1) + fy(2))
     ! Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
