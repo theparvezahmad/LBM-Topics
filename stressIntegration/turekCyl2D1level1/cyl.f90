@@ -824,11 +824,11 @@ contains
 
         poc%noOfRD = 0
         do a = 1, 4
-          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
-          if (dirDotUnitVec(a) .gt. d0) then
+          if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
+            ! if (dirDotUnitVec(a) .gt. d0) then
             poc%noOfRD = poc%noOfRD + 1
             outDir(poc%noOfRD) = a
-            ! exit
+            exit
           end if
         end do
 
