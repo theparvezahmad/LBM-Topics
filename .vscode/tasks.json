@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "make -B",
       "options": {
-        "cwd": "${workspaceRoot}/stressIntegration/turekCyl2D1level1"
+        "cwd": "${workspaceRoot}/stressIntegration/turekCylBarCFD1/level1"
       }
     }
   ]
