@@ -97,8 +97,9 @@ program cyl
   type(triplet_t)::dataPt1, dataPt2, dataPt
   ! type(lbmTriplet_t)::onSurf
   integer::nx, ny
-  double precision, dimension(noOfPtOnCircle):: forceXCir, forceYCir, forceXBar, forceYBar
-  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
+  double precision, dimension(noOfPtOnCircle):: forceXCir, forceYCir
+  double precision, dimension(noOfPtOnBar):: forceXBar, forceYBar
+  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_, arcSkip
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2), avgST(2, 2)
   integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber, cnt
   double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), cDelta, chi, ubfx, ubfy, uwx, uwy
@@ -138,6 +139,7 @@ program cyl
   uMean_ = uMean/CVel
   tau = 3*nu_ + 0.5d0
   invTau = 1.0d0/tau
+  arcSkip = atan(barH_/dia_)
 
   write (*, *) 'Clen = ', Clen
   write (*, *) 'Crho = ', Crho
@@ -620,9 +622,9 @@ program cyl
         poc%force%y = avgST(2, 1)*poc%uv%x + avgST(2, 2)*poc%uv%y
         ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
 
-        if (t_ == 100000) then
-          write (*, *) i, poc%force
-        end if
+        ! if (t_ == 100000) then
+        !   write (*, *) i, poc%force
+        ! end if
       end associate
     end do
 
@@ -697,10 +699,12 @@ program cyl
     end do
     ! write (*, *) forceX
     totalForceCir%x = trapIntegrate(forceXCir)
-    totalForceCir%y = trapIntegrate(forceYCir)
+    ! totalForceCir%y = trapIntegrate(forceYCir)
+    ! totalForceCir%x = sum(forceXCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
+    totalForceCir%y = sum(forceYCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
 
-    totalForceBar%x = sum(forceXBar)*(2*barL_ + barH_)
-    totalForceBar%y = sum(forceYBar)*(2*barL_ + barH_)
+    totalForceBar%x = sum(forceXBar)*(2*barL_ + barH_)/noOfPtOnBar
+    totalForceBar%y = sum(forceYBar)*(2*barL_ + barH_)/noOfPtOnBar
 
     ! if (t_ == 100000) then
     !   write (*, *) '======================================'
@@ -722,7 +726,7 @@ program cyl
     ! Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
-      write (10, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
+      write (10, '(E16.6,2X,I10,7(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2, totalForceCir%x*CFor, totalForceBar%x*CFor
       ! write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
 
@@ -888,14 +892,13 @@ contains
     type(custom_t), allocatable, dimension(:), intent(out)::ptOnCircle
     type(doublet_t)::dir
     type(doubletInt_t)::locBox(4)
-    double precision::theta0, theta, dTheta, dirDotUnitVec(4), arcSkip
+    double precision::theta0, theta, dTheta, dirDotUnitVec(4)
     double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
     double precision:: x_xConst, y_xConst, x_yConst, y_yConst
     double precision:: dist_xConst, dist_yConst
     integer::i, a, k, outDir(3), xConst, yConst!, itmp(1)
     allocate (ptOnCircle(noOfPts))
 
-    arcSkip = atan(barH_/dia_)
     theta0 = d0 + arcSkip
     dTheta = (2*pi - 2*arcSkip)/noOfPts
 
@@ -1009,7 +1012,7 @@ contains
 
   end subroutine createDataStructOnCircle
 
-  subroutine createDSonBar(noOfPtOnBar, ptOnBar)
+  pure subroutine createDSonBar(noOfPtOnBar, ptOnBar)
     integer, intent(in)::noOfPtOnBar
     type(custom_t), allocatable, dimension(:), intent(out) :: ptOnBar
     type(doublet_t):: startPtOnBar, dir
