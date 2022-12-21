@@ -1,5 +1,5 @@
 FC=ifort #fortran compiler
-#FC=gfortran
+# FC=gfortran
 FFLAGS=
 #-g -warn all -check all -traceback -stand f18 -fpe0
 #-mkl -fast
