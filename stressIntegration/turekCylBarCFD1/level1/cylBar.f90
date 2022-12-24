@@ -698,9 +698,9 @@ program cyl
       forceYBar(k) = ptOnBar(k)%force%y
     end do
     ! write (*, *) forceX
-    totalForceCir%x = trapIntegrate(forceXCir)
+    ! totalForceCir%x = trapIntegrate(forceXCir)
     ! totalForceCir%y = trapIntegrate(forceYCir)
-    ! totalForceCir%x = sum(forceXCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
+    totalForceCir%x = sum(forceXCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
     totalForceCir%y = sum(forceYCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
 
     totalForceBar%x = sum(forceXBar)*(2*barL_ + barH_)/noOfPtOnBar
@@ -901,6 +901,9 @@ contains
 
     theta0 = d0 + arcSkip
     dTheta = (2*pi - 2*arcSkip)/noOfPts
+
+    ! theta0 = d0
+    ! dTheta = (2*pi)/noOfPts
 
     do i = 0, noOfPts - 1
       associate (poc => ptOnCircle(i + 1))
