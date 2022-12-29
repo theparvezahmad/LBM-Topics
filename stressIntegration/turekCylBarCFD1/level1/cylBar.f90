@@ -95,7 +95,7 @@ program cyl
   type(custom_t), allocatable, dimension(:)::ptOnCircle, ptOnBar
   type(doublet_t)::totalForceCir, totalForceBar
   type(triplet_t)::dataPt1, dataPt2, dataPt
-  ! type(lbmTriplet_t)::onSurf
+  type(lbmTriplet_t)::lbmVarA(noOfPtOnBar)
   integer::nx, ny
   double precision, dimension(noOfPtOnCircle):: forceXCir, forceYCir
   double precision, dimension(noOfPtOnBar):: forceXBar, forceYBar
@@ -711,6 +711,28 @@ program cyl
     !   write (*, *) totalForce%x, sum(forceX)
     !   write (*, *) 0.5*rhoF_*uMean_*uMean_*dia_
     ! end if
+
+    if (mod(t_, 500) == 0) then
+      do i = 71, 74
+        associate (pob => ptOnBar(i))
+          iRD = 1
+          dataPt1%x = pob%n2(iRD)%x
+          dataPt1%y = pob%n2(iRD)%y
+          dataPt2%x = pob%n1(iRD)%x
+          dataPt2%y = pob%n1(iRD)%y
+          dataPt%x = pob%n0(iRD)%x
+          dataPt%y = pob%n0(iRD)%y
+          do a = 0, q - 1
+            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
+            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
+            call linearExtInt(dataPt1, dataPt2, dataPt)
+            tmpA(a) = dataPt%z
+          end do
+          lbmVarA(i) = macroVar(tmpA)
+        end associate
+      end do
+      write (*, '(I10,4(F8.4))') t_, lbmVarA(71)%r, lbmVarA(72)%r, lbmVarA(73)%r, lbmVarA(74)%r
+    end if
 
 !=================working================================
     fx_t = 0.5*(fx(1) + fx(2))
