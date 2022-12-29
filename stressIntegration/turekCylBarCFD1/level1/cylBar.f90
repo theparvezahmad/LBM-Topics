@@ -102,7 +102,7 @@ program cyl
   double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_, arcSkip
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2), avgST(2, 2)
   integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber, cnt
-  double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), cDelta, chi, ubfx, ubfy, uwx, uwy
+  double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), cDelta, chi, ubfx, ubfy, uwx, uwy, iMid, jMid
   integer, allocatable, dimension(:, :)::isn, wb
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
   double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
@@ -209,11 +209,11 @@ program cyl
       ! ii = i - 1.5
       ! jj = j - 1.5
 
-      isCyl = ((i - xc_)**2.0 + (j - yc_)**2.0)**0.5 .le. 0.5*dia_
+      ! isCyl = ((i - xc_)**2.0 + (j - yc_)**2.0)**0.5 .le. 0.5*dia_
+      isCyl = .false.
 
       isBar = (i .ge. xc_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
               (j .ge. xc_ - barH_/2) .and. (j .le. xc_ + barH_/2)
-
       ! isBar = .false.
 
       if (isCyl) then
@@ -342,6 +342,9 @@ program cyl
             ia = i + ex(a)
             ja = j + ey(a)
 
+            iMid = haf*(i + ia)
+            jMid = haf*(j + ja)
+
             if (isn(ia, ja) .eq. 1) then !structure
               cnt = cnt + 1
               if (Delta(cnt) .ge. d0 .and. Delta(cnt) .lt. 0.5d0) then
@@ -368,6 +371,7 @@ program cyl
             end if
 
             if (isn(ia, ja) .eq. 3) then !bar
+              ! if ((iMid .gt. xc_ + haf*dia_) .and. (iMid .gt. xc_ + haf*dia_ + barL_) .and. (jMid .eq. yc_)) then
               cDelta = 0.5d0
 
               chi = (2.0d0*cDelta - 1.0d0)/(tau + 0.5d0)
@@ -739,8 +743,10 @@ program cyl
     fy_t = 0.5*(fy(1) + fy(2))
     Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
     Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd2 = (totalForceCir%x + totalForceBar%x)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl2 = (totalForcecir%y + totalForceBar%y)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cd2 = (totalForceCir%x + totalForceBar%x)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cd2 = (totalForceBar%x)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cl2 = (totalForcecir%y + totalForceBar%y)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cl2 = (totalForceBar%y)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
 
     ! Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
     ! Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
@@ -748,7 +754,7 @@ program cyl
     ! Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
-      write (10, '(E16.6,2X,I10,7(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2, totalForceCir%x*CFor, totalForceBar%x*CFor
+      write (10, '(E16.6,2X,I10,7(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       ! write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
 
