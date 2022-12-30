@@ -11,7 +11,7 @@ program cyl
     noOfSnaps = 5, &
     dispFreq = 100, &
     noOfPtOnCircle = 400, &
-    noOfPtOnBar = 144
+    noOfPtOnBar = 148
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -212,7 +212,7 @@ program cyl
       ! isCyl = ((i - xc_)**2.0 + (j - yc_)**2.0)**0.5 .le. 0.5*dia_
       isCyl = .false.
 
-      isBar = (i .ge. xc_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
+      isBar = (i .ge. xc_ + haf*dia_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
               (j .ge. xc_ - barH_/2) .and. (j .le. xc_ + barH_/2)
       ! isBar = .false.
 
@@ -1059,7 +1059,7 @@ contains
 
     startPtOnBar%x = xc_ + haf*dia_
     startPtOnBar%y = yc_ - haf*barH_
-    ds = (2*barL_ + barH_)/noOfPtOnBar
+    ds = (d2*barL_ + d2*barH_)/noOfPtOnBar
 
     ! xFlag = 1
     ! yFlag = 0
@@ -1079,11 +1079,16 @@ contains
           pob%n0(:)%y = startPtOnBar%y + arcLen - barL_
           pob%uv%x = 1.0d0
           pob%uv%y = 0.0d0
-        else
+        elseif (arcLen .lt. (d2*barL_ + barH_)) then
           pob%n0(:)%x = startPtOnBar%x + (2*barL_ + barH_ - arcLen)
           pob%n0(:)%y = startPtOnBar%y + barH_
           pob%uv%x = 0.0d0
           pob%uv%y = 1.0d0
+        else
+          pob%n0(:)%x = startPtOnBar%x
+          pob%n0(:)%y = startPtOnBar%y + arcLen - (d2*barL_ + barH_)
+          pob%uv%x = -1.0d0
+          pob%uv%y = 0.0d0
         end if
         ! write (*, '(I4,5(F10.4))') (i + 1), arcLen, pob%n0(1)%x, pob%n0(1)%y, pob%uv%x, pob%uv%y
 
@@ -1106,11 +1111,11 @@ contains
 
         pob%noOfRD = 0
         do a = 1, 4
-          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
-          if (dirDotUnitVec(a) .gt. d0) then
+          if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
+            ! if (dirDotUnitVec(a) .gt. d0) then
             pob%noOfRD = pob%noOfRD + 1
             outDir(pob%noOfRD) = a
-            ! exit
+            exit
           end if
         end do
 
