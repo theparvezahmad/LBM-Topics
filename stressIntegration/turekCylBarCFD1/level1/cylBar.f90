@@ -9,7 +9,7 @@ program cyl
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
-    dispFreq = 100, &
+    dispFreq = 500, &
     noOfPtOnCircle = 400, &
     noOfPtOnBar = 148
 
@@ -90,11 +90,12 @@ program cyl
     type(ptWithTensorN0_t), dimension(3)::n0
     type(ptWithTensorN1_t), dimension(3)::n1
     type(ptWithTensorN2_t), dimension(3)::n2
+    type(ptWithTensorN2_t), dimension(3)::n3
   end type custom_t
 
   type(custom_t), allocatable, dimension(:)::ptOnCircle, ptOnBar
   type(doublet_t)::totalForceCir, totalForceBar
-  type(triplet_t)::dataPt1, dataPt2, dataPt
+  type(triplet_t)::dataPt1, dataPt2, dataPt3, dataPt, dataPtArr(0:2)
   type(lbmTriplet_t)::lbmVarA(noOfPtOnBar)
   integer::nx, ny
   double precision, dimension(noOfPtOnCircle):: forceXCir, forceYCir
@@ -371,7 +372,8 @@ program cyl
             end if
 
             if (isn(ia, ja) .eq. 3) then !bar
-              ! if ((iMid .gt. xc_ + haf*dia_) .and. (iMid .gt. xc_ + haf*dia_ + barL_) .and. (jMid .eq. yc_)) then
+              ! if ((iMid .gt. xc_ + haf*dia_) .and. (iMid .lt. xc_ + haf*dia_ + barL_) .and. (jMid .eq. yc_)) then
+              ! write (*, *) t_, a, iMid, jMid
               cDelta = 0.5d0
 
               chi = (2.0d0*cDelta - 1.0d0)/(tau + 0.5d0)
@@ -529,6 +531,24 @@ program cyl
     ! call linearExtInt(dataPt1, dataPt2, dataPt)
     ! write (*, *) dataPt%z
     ! stop
+
+    ! dataPt1%x = 0.0d0
+    ! dataPt1%y = 3.0d0
+    ! dataPt1%z = 9.0d0
+
+    ! dataPt2%x = 0.0d0
+    ! dataPt2%y = 2.0d0
+    ! dataPt2%z = 4.0d0
+
+    ! dataPt3%x = 0.0d0
+    ! dataPt3%y = 4.0d0
+    ! dataPt3%z = 16.0d0
+
+    ! dataPt%x = 0.0d0
+    ! dataPt%y = 1.5d0
+    ! call quadExtInt(dataPt1, dataPt2, dataPt3, dataPt)
+    ! write (*, *) dataPt%z
+    ! stop
 !=================working================================
     do i = 1, size(ptOnCircle)
       associate (poc => ptOnCircle(i))
@@ -637,6 +657,21 @@ program cyl
 
         do iRD = 1, pob%noOfRD
 
+          dataPt1%x = pob%n3(iRD)%b(1)%x
+          dataPt1%y = pob%n3(iRD)%b(1)%y
+          dataPt2%x = pob%n3(iRD)%b(2)%x
+          dataPt2%y = pob%n3(iRD)%b(2)%y
+          dataPt%x = pob%n3(iRD)%x
+          dataPt%y = pob%n3(iRD)%y
+          do a = 0, q - 1
+            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
+            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
+            call linearExtInt(dataPt1, dataPt2, dataPt)
+            tmpA(a) = dataPt%z
+          end do
+          call calcStressTensor2(tmpA, sigma)
+          pob%n3(iRD)%st = sigma
+
           dataPt1%x = pob%n2(iRD)%b(1)%x
           dataPt1%y = pob%n2(iRD)%b(1)%y
           dataPt2%x = pob%n2(iRD)%b(2)%x
@@ -649,23 +684,27 @@ program cyl
             call linearExtInt(dataPt1, dataPt2, dataPt)
             tmpA(a) = dataPt%z
           end do
-
           call calcStressTensor2(tmpA, sigma)
           pob%n2(iRD)%st = sigma
+
           call calcStressTensor2(f(:, int(pob%n1(iRD)%x), int(pob%n1(iRD)%y)), sigma)
           pob%n1(iRD)%st = sigma
 
-          dataPt1%x = pob%n2(iRD)%x
-          dataPt1%y = pob%n2(iRD)%y
-          dataPt2%x = pob%n1(iRD)%x
-          dataPt2%y = pob%n1(iRD)%y
+          dataPt3%x = pob%n3(iRD)%x
+          dataPt3%y = pob%n3(iRD)%y
+          dataPt2%x = pob%n2(iRD)%x
+          dataPt2%y = pob%n2(iRD)%y
+          dataPt1%x = pob%n1(iRD)%x
+          dataPt1%y = pob%n1(iRD)%y
           dataPt%x = pob%n0(iRD)%x
           dataPt%y = pob%n0(iRD)%y
           do k = 1, 2
             do p = 1, 2
-              dataPt1%z = pob%n2(iRD)%st(k, p)
-              dataPt2%z = pob%n1(iRD)%st(k, p)
-              call linearExtInt(dataPt1, dataPt2, dataPt)
+              dataPt1%z = pob%n1(iRD)%st(k, p)
+              dataPt2%z = pob%n2(iRD)%st(k, p)
+              dataPt3%z = pob%n3(iRD)%st(k, p)
+              ! call linearExtInt(dataPt1, dataPt2, dataPt)
+              call quadExtInt(dataPt1, dataPt2, dataPt3, dataPt)
               pob%n0(iRD)%st(k, p) = dataPt%z
             end do
           end do
@@ -1051,9 +1090,10 @@ contains
     double precision::dirDotUnitVec(4)
     double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
     double precision:: x_xConst, y_xConst, x_yConst, y_yConst
-    double precision:: dist_xConst, dist_yConst
-    integer::i, a, k, outDir(3), xConst, yConst!, itmp(1)
-    double precision:: ds, arcLen
+    double precision:: x_xConst2, y_xConst2, x_yConst2, y_yConst2
+    double precision:: dist_xConst, dist_yConst, dist_xConst2, dist_yConst2
+    integer::i, a, k, outDir(3), xConst, yConst, xConst2, yConst2!, itmp(1)
+    double precision:: ds, arcLen, leftOverDist, min2ndDist
 
     allocate (ptOnBar(noOfPtOnBar))
 
@@ -1132,6 +1172,9 @@ contains
           xConst = int(pob%n1(k)%x) + int(sign(d1, dir%x))
           yconst = int(pob%n1(k)%y) + int(sign(d1, dir%y))
 
+          xConst2 = int(pob%n1(k)%x) + 2*int(sign(d1, dir%x))
+          yconst2 = int(pob%n1(k)%y) + 2*int(sign(d1, dir%y))
+
           x0 = pob%n0(k)%x
           y0 = pob%n0(k)%y
           x1 = pob%n1(k)%x
@@ -1169,10 +1212,46 @@ contains
             y_yConst = (a1*c2 - a2*c1)/determinant
           end if
 
+          !---------------------
+          a1 = y1 - y0
+          b1 = -(x1 - x0)
+          c1 = (y1 - y0)*x0 - (x1 - x0)*y0
+
+          a2 = 1.0
+          b2 = 0.0
+          c2 = xConst2
+
+          determinant = a1*b2 - a2*b1
+
+          if (abs(determinant) < 0.0001) then
+            x_xConst2 = xConst2
+            y_xConst2 = 99999
+          else
+            x_xConst2 = (c1*b2 - c2*b1)/determinant
+            y_xConst2 = (a1*c2 - a2*c1)/determinant
+          end if
+
+          a2 = 0.0
+          b2 = 1.0
+          c2 = yConst2
+
+          determinant = a1*b2 - a2*b1
+
+          if (abs(determinant) < 0.0001) then
+            x_yConst2 = 99999
+            y_yConst2 = yConst
+          else
+            x_yConst2 = (c1*b2 - c2*b1)/determinant
+            y_yConst2 = (a1*c2 - a2*c1)/determinant
+          end if
+
           dist_xConst = sqrt((x_xConst - x0)**d2 + (y_xConst - y0)**d2)
           dist_yConst = sqrt((x_yConst - x0)**d2 + (y_yConst - y0)**d2)
-
+          dist_xConst2 = sqrt((x_xConst2 - x0)**d2 + (y_xConst2 - y0)**d2)
+          dist_yConst2 = sqrt((x_yConst2 - x0)**d2 + (y_yConst2 - y0)**d2)
+          !---------------------
           if (dist_xConst <= dist_yConst) then
+            leftOverDist = dist_yConst
             pob%n2(k)%x = x_xConst
             pob%n2(k)%y = y_xConst
             pob%n2(k)%b(1)%x = x_xConst
@@ -1180,6 +1259,7 @@ contains
             pob%n2(k)%b(2)%x = x_xConst
             pob%n2(k)%b(2)%y = ceiling(y_xConst)
           else
+            leftOverDist = dist_xConst
             pob%n2(k)%x = x_yConst
             pob%n2(k)%y = y_yConst
             pob%n2(k)%b(1)%x = floor(x_yConst)
@@ -1187,6 +1267,38 @@ contains
             pob%n2(k)%b(2)%x = ceiling(x_yConst)
             pob%n2(k)%b(2)%y = y_yConst
           end if
+
+          min2ndDist = min(leftOverDist, dist_xConst2, dist_yConst2)
+          if (min2ndDist .eq. dist_xConst) then
+            pob%n3(k)%x = x_xConst
+            pob%n3(k)%y = y_xConst
+            pob%n3(k)%b(1)%x = x_xConst
+            pob%n3(k)%b(1)%y = floor(y_xConst)
+            pob%n3(k)%b(2)%x = x_xConst
+            pob%n3(k)%b(2)%y = ceiling(y_xConst)
+          elseif (min2ndDist .eq. dist_yConst) then
+            pob%n3(k)%x = x_yConst
+            pob%n3(k)%y = y_yConst
+            pob%n3(k)%b(1)%x = floor(x_yConst)
+            pob%n3(k)%b(1)%y = y_yConst
+            pob%n3(k)%b(2)%x = ceiling(x_yConst)
+            pob%n3(k)%b(2)%y = y_yConst
+          elseif (min2ndDist .eq. dist_xConst2) then
+            pob%n3(k)%x = x_xConst2
+            pob%n3(k)%y = y_xConst2
+            pob%n3(k)%b(1)%x = x_xConst2
+            pob%n3(k)%b(1)%y = floor(y_xConst2)
+            pob%n3(k)%b(2)%x = x_xConst2
+            pob%n3(k)%b(2)%y = ceiling(y_xConst2)
+          elseif (min2ndDist .eq. dist_yConst2) then
+            pob%n3(k)%x = x_yConst2
+            pob%n3(k)%y = y_yConst2
+            pob%n3(k)%b(1)%x = floor(x_yConst2)
+            pob%n3(k)%b(1)%y = y_yConst2
+            pob%n3(k)%b(2)%x = ceiling(x_yConst2)
+            pob%n3(k)%b(2)%y = y_yConst2
+          end if
+
         end do
 
       end associate
@@ -1280,6 +1392,37 @@ contains
     pt%z = pt1%z + x0x1*(pt2%z - pt1%z)/x2x1
 
   end subroutine linearExtInt
+
+  pure subroutine quadExtInt(pt1, pt2, pt3, ptAsk)
+    ! double precision, intent(in) :: x, y
+    type(triplet_t), intent(in) :: pt1, pt2, pt3
+    type(triplet_t), intent(inout) :: ptAsk
+    type(triplet_t) :: pt(0:2)
+    double precision:: xAsk, x(0:2), sum, prod(0:2)
+    integer:: i, j, m
+
+    pt(0) = pt1
+    pt(1) = pt2
+    pt(2) = pt3
+
+    xAsk = sqrt(ptAsk%x**d2 + ptAsk%y**d2)
+    do i = 0, 2
+      x(i) = sqrt(pt(i)%x**d2 + pt(i)%y**d2)
+    end do
+
+    sum = d0
+    do j = 0, 2
+      prod(j) = d1
+      do m = 0, 2
+        if (m == j) cycle
+        prod(j) = prod(j)*(xAsk - x(m))/(x(j) - x(m))
+      end do
+      sum = sum + pt(j)%z*prod(j)
+    end do
+
+    ptAsk%z = sum
+
+  end subroutine quadExtInt
 
   ! pure subroutine bilinearInterp(pt, box, err)
   !   type(triplet_t), intent(inout) :: pt
