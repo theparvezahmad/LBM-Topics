@@ -9,7 +9,7 @@ program cyl
     q = 9, &
     time_ = 100000, &
     noOfSnaps = 5, &
-    dispFreq = 500, &
+    dispFreq = 100, &
     noOfPtOnCircle = 400, &
     noOfPtOnBar = 592
 
