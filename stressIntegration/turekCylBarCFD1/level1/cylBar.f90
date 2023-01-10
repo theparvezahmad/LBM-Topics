@@ -11,7 +11,7 @@ program cyl
     noOfSnaps = 5, &
     dispFreq = 500, &
     noOfPtOnCircle = 400, &
-    noOfPtOnBar = 148
+    noOfPtOnBar = 592
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
@@ -746,8 +746,8 @@ program cyl
     totalForceCir%x = sum(forceXCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
     totalForceCir%y = sum(forceYCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
 
-    totalForceBar%x = sum(forceXBar)*(2*barL_ + barH_)/noOfPtOnBar
-    totalForceBar%y = sum(forceYBar)*(2*barL_ + barH_)/noOfPtOnBar
+    totalForceBar%x = sum(forceXBar)*(2*barL_ + 2*barH_)/noOfPtOnBar
+    totalForceBar%y = sum(forceYBar)*(2*barL_ + 2*barH_)/noOfPtOnBar
 
     ! if (t_ == 100000) then
     !   write (*, *) '======================================'
@@ -1151,11 +1151,11 @@ contains
 
         pob%noOfRD = 0
         do a = 1, 4
-          if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
-            ! if (dirDotUnitVec(a) .gt. d0) then
+          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
+          if (dirDotUnitVec(a) .gt. d0) then
             pob%noOfRD = pob%noOfRD + 1
             outDir(pob%noOfRD) = a
-            exit
+            ! exit
           end if
         end do
 
