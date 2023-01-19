@@ -8,15 +8,14 @@ program cyl
     dim = 2, &
     q = 9, &
     time_ = 100000, &
-    noOfSnaps = 5, &
+    noOfSnaps = 2, &
     dispFreq = 100, &
-    noOfPtOnCircle = 400, &
-    noOfPtOnBar = 592
+    noOfPtOnCircle = 400
 
   double precision, parameter:: &
     rhoF_ = 1.0d0, &
     rhoF = 1000.0d0, &
-    chanL = 2.5d0, & !Length of channel
+    chanL = 2.2d0, & !Length of channel
     chanH = 0.41d0, & !Width of channel
     barL = 0.35d0, &
     barH = 0.02d0, &
@@ -90,27 +89,25 @@ program cyl
     type(ptWithTensorN0_t), dimension(3)::n0
     type(ptWithTensorN1_t), dimension(3)::n1
     type(ptWithTensorN2_t), dimension(3)::n2
-    type(ptWithTensorN2_t), dimension(3)::n3
   end type custom_t
 
-  type(custom_t), allocatable, dimension(:)::ptOnCircle, ptOnBar
-  type(doublet_t)::totalForceCir, totalForceBar
-  type(triplet_t)::dataPt1, dataPt2, dataPt3, dataPt, dataPtArr(0:2)
-  type(lbmTriplet_t)::lbmVarA(noOfPtOnBar)
+  type(custom_t), allocatable, dimension(:)::ptOnCircle
+  type(doublet_t)::totalForce
+  type(triplet_t)::dataPt1, dataPt2, dataPt
+  ! type(lbmTriplet_t)::onSurf
   integer::nx, ny
-  double precision, dimension(noOfPtOnCircle):: forceXCir, forceYCir
-  double precision, dimension(noOfPtOnBar):: forceXBar, forceYBar
-  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_, arcSkip
+  double precision, dimension(noOfPtOnCircle):: forceX, forceY
+  double precision:: nu_, uMean_, uPara_, uParaRamp_, dia_, xc_, yc_, chanL_, barL_, barH_
   double precision:: Clen, Crho, Ct, Cnu, CVel, CFor, tau, t, invTau, sigma(2, 2), avgST(2, 2)
-  integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber, cnt
-  double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), cDelta, chi, ubfx, ubfy, uwx, uwy, iMid, jMid
+  integer:: i, iRD, j, k, p, a, a1, t_, ia, ja, solnumber, cnt, iter
+  double precision:: i_, j_, ia_, ja_, ii, jj, Delta(1000), chi, ubfx, ubfy, uwx, uwy, fxx
   integer, allocatable, dimension(:, :)::isn, wb
   double precision:: tmp1, tmp2, tmp3, rhoSum, feq, fx_t, fy_t, Cd, Cl, Cd2, Cl2
-  double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq
+  double precision:: fx(2), fy(2), dudx, dudy, dvdx, dvdy, f_neq, rhoBar
   double precision, dimension(0:q - 1):: wt, Q_xx, Q_yy, Q_xy, tmpA
   integer, dimension(0:q - 1):: ex, ey, kb, ci(0:q - 1, 2)
   double precision, allocatable, dimension(:, :, :):: f, ft
-  double precision, allocatable, dimension(:, :):: ux, uy, rho
+  double precision, allocatable, dimension(:, :):: ux, uy, rho, delRho
   logical::isCyl, isBar
   character(len=30):: filename
   solnumber = 0
@@ -120,7 +117,7 @@ program cyl
 !===Conversion Factors===
   Clen = chanH/chanH_
   Crho = rhoF/rhoF_
-  Ct = dia/uMean*0.0025d0
+  Ct = dia/uMean*0.00025d0
   Cnu = Clen**2.0d0/Ct
   CVel = Clen/Ct
   ! CFor = Crho*Clen**4.0d0*Ct**(-2.0d0)
@@ -140,7 +137,6 @@ program cyl
   uMean_ = uMean/CVel
   tau = 3*nu_ + 0.5d0
   invTau = 1.0d0/tau
-  arcSkip = atan(barH_/dia_)
 
   write (*, *) 'Clen = ', Clen
   write (*, *) 'Crho = ', Crho
@@ -157,6 +153,7 @@ program cyl
   allocate (ux(nx + 2, ny + 2))
   allocate (uy(nx + 2, ny + 2))
   allocate (rho(nx + 2, ny + 2))
+  allocate (delRho(nx + 2, ny + 2))
   allocate (f(0:q - 1, nx + 2, ny + 2))
   allocate (ft(0:q - 1, nx + 2, ny + 2))
 !----------------------------------------------------------------------
@@ -186,21 +183,75 @@ program cyl
       end if
     end do
   end do
-!----------------------------------------------------------------------
+  !----------------------------------------------------------------------
   do i = 1, nx + 2
     do j = 1, ny + 2
-      uPara_ = d0! 6*uMean_*(ny - (j - 1.5))*(j - 1.5)/ny**2;
       do a = 0, q - 1
-        tmp1 = uPara_*ex(a)
-        tmp2 = uPara_*uPara_
-        f(a, i, j) = wt(a)*rhoF_*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
+        f(a, i, j) = wt(a)
       end do
     end do
   end do
+
+  delRho = d0
+  rhoBar = d1
+  do iter = 1, 50
+
+    rhoSum = d0
+    do i = 2, nx + 1
+      do j = 2, ny + 1
+        tmp1 = d0
+        tmp2 = d0
+        tmp3 = d0
+        do a = 0, q - 1
+          tmp1 = tmp1 + f(a, i, j)
+          ! tmp2 = tmp2 + f(a, i, j)*ex(a)
+          ! tmp3 = tmp3 + f(a, i, j)*ey(a)
+        end do
+
+        delRho(i, j) = tmp1
+        ! ux(i, j) = tmp2/tmp1
+        ! uy(i, j) = tmp3/tmp1
+
+        rhoSum = rhoSum + tmp1
+      end do
+    end do
+
+    write (*, *) iter, rhoSum/(nx*ny)
+
+    do i = 1, nx + 2
+      do j = 1, ny + 2
+        uPara_ = 6*uMean_*(ny - (j - 1.5))*(j - 1.5)/ny**2; 
+        do a = 0, q - 1
+          tmp1 = uPara_*ex(a) + d0*ey(a)
+          tmp2 = uPara_*uPara_ + d0*d0
+          ! f(a, i, j) = wt(a)*rhoF_*(1.0 + 3.0*tmp1 + 4.5*tmp1*tmp1 - 1.5*tmp2)
+
+          feq = wt(a)*(delRho(i, j) + 3.0*rhoBar*tmp1 + 4.5*rhoBar*tmp1*tmp1 - 1.5*rhoBar*tmp2)
+          ft(a, i, j) = f(a, i, j) - invTau*(f(a, i, j) - feq)
+        end do
+      end do
+    end do
+
+    do i = 2, nx + 1 !Streaming post-collision
+      do j = 2, ny + 1
+        do a = 0, q - 1
+          ia = i + ex(a)
+          ja = j + ey(a)
+          !if (ia<1 )        { ia = nx  }
+          !if (ia>nx)        { ia = 1   }
+
+          f(a, ia, ja) = ft(a, i, j)
+        end do
+      end do
+    end do
+
+  end do
+  stop
 !----------------------------------------------------------------------
   fx(1) = d0
   fy(1) = d0
   open (unit=10, file="tRhoCdCl.dat")
+  open (unit=11, file="forceAtPt.dat")
   write (10, *) "Variables=timeLBM,timeReal,rho,Cd,Cl,Cd2,Cl2"
   ! open (unit=11, file="VelSig.dat")
 !----------------------------------------------------------------------
@@ -211,16 +262,14 @@ program cyl
       ! jj = j - 1.5
 
       isCyl = ((i - xc_)**2.0 + (j - yc_)**2.0)**0.5 .le. 0.5*dia_
-      ! isCyl = .false.
 
-      isBar = (i .ge. xc_ + haf*dia_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
+      isBar = (i .ge. xc_) .and. (i .le. xc_ + dia_/2 + barL_) .and. &
               (j .ge. xc_ - barH_/2) .and. (j .le. xc_ + barH_/2)
-      ! isBar = .false.
 
-      if (isCyl) then
+      isBar = .false.
+
+      if (isCyl .or. isBar) then
         isn(i, j) = 1
-      elseif (isBar) then
-        isn(i, j) = 3
       elseif (j == 1 .or. j == ny + 2) then
         isn(i, j) = 2
       else
@@ -229,18 +278,6 @@ program cyl
 
     end do
   end do
-
-  open (unit=12, file="region.dat")
-  write (12, *) "Variables=x,y,region"
-  write (12, '(2(a,I6))') "Zone I=", nx + 2, ",J=", ny + 2
-  do j = 1, ny + 2
-    do i = 1, nx + 2
-      write (12, '(2(2X,I6),2X,I3)') i, j, isn(i, j)
-    end do
-    write (12, *)
-  end do
-  close (12)
-  ! stop
   !------------------------------------------------------------------
   cnt = 0
   do i = 2, nx + 1
@@ -285,7 +322,6 @@ program cyl
   ! stop
 
   call createDataStructOnCircle(noOfPtOnCircle, ptOnCircle)
-  call createDSonBar(noOfPtOnBar, ptOnBar)
 
 !----------------------------------------------------------------------
   do t_ = 0, time_
@@ -331,6 +367,7 @@ program cyl
 !----------------------------------------------------------------------
     fx(2) = d0
     fy(2) = d0
+    fxx = d0
     uwx = d0
     uwy = d0
     cnt = 0
@@ -342,9 +379,6 @@ program cyl
 
             ia = i + ex(a)
             ja = j + ey(a)
-
-            iMid = haf*(i + ia)
-            jMid = haf*(j + ja)
 
             if (isn(ia, ja) .eq. 1) then !structure
               cnt = cnt + 1
@@ -369,26 +403,13 @@ program cyl
 
               fx(2) = fx(2) + ex(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
               fy(2) = fy(2) + ey(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
-            end if
 
-            if (isn(ia, ja) .eq. 3) then !bar
-              ! if ((iMid .gt. xc_ + haf*dia_) .and. (iMid .lt. xc_ + haf*dia_ + barL_) .and. (jMid .eq. yc_)) then
-              ! write (*, *) t_, a, iMid, jMid
-              cDelta = 0.5d0
+          if ((j == ceiling(yc_ + haf*dia_) .and. i == floor(xc_) .and. ja == floor(yc_ + haf*dia_) .and. ia == ceiling(xc_)) .or. &
+               (j == ceiling(yc_ + haf*dia_) .and. i == ceiling(xc_) .and. ja == floor(yc_ + haf*dia_) .and. ia == floor(xc_))) then
+                fxx = fxx + ex(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
+                ! write (*, *) ex(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
+              end if
 
-              chi = (2.0d0*cDelta - 1.0d0)/(tau + 0.5d0)
-              ubfx = 0.5d0*(2.0d0*cDelta - 3.0d0)/cDelta*ux(i, j) + 1.5d0*uwx/cDelta
-              ubfy = 0.5d0*(2.0d0*cDelta - 3.0d0)/cDelta*uy(i, j) + 1.5d0*uwy/cDelta
-
-              tmp1 = ux(i, j)*ex(a) + uy(i, j)*ey(a)
-              tmp2 = ux(i, j)*ux(i, j) + uy(i, j)*uy(i, j)
-              feq = wt(a)*rho(i, j)*(1.0d0 + 3.0d0*tmp1 + 4.5d0*tmp1*tmp1 - 1.5d0*tmp2)
-              ft(kb(a), ia, ja) = ft(a, i, j) - chi*(ft(a, i, j) - feq) + &
-                                  wt(a)*rho(i, j)*3.0d0*(ex(a)*(chi*(ubfx - ux(i, j)) - 2.0d0*uwx) + &
-                                                         ey(a)*(chi*(ubfy - uy(i, j)) - 2.0d0*uwy))
-
-              fx(2) = fx(2) + ex(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
-              fy(2) = fy(2) + ey(a)*(ft(a, i, j) + ft(kb(a), ia, ja))
             end if
 
             if (isn(ia, ja) .eq. 2) then !wall
@@ -399,7 +420,8 @@ program cyl
         end if
       end do
     end do
-!----------------------------------------------------------------------
+
+    !----------------------------------------------------------------------
     do i = 2, nx + 1 !Streaming post-collision
       do j = 2, ny + 1
         do a = 0, q - 1
@@ -531,24 +553,6 @@ program cyl
     ! call linearExtInt(dataPt1, dataPt2, dataPt)
     ! write (*, *) dataPt%z
     ! stop
-
-    ! dataPt1%x = 0.0d0
-    ! dataPt1%y = 3.0d0
-    ! dataPt1%z = 9.0d0
-
-    ! dataPt2%x = 0.0d0
-    ! dataPt2%y = 2.0d0
-    ! dataPt2%z = 4.0d0
-
-    ! dataPt3%x = 0.0d0
-    ! dataPt3%y = 4.0d0
-    ! dataPt3%z = 16.0d0
-
-    ! dataPt%x = 0.0d0
-    ! dataPt%y = 1.5d0
-    ! call quadExtInt(dataPt1, dataPt2, dataPt3, dataPt)
-    ! write (*, *) dataPt%z
-    ! stop
 !=================working================================
     do i = 1, size(ptOnCircle)
       associate (poc => ptOnCircle(i))
@@ -646,83 +650,9 @@ program cyl
         poc%force%y = avgST(2, 1)*poc%uv%x + avgST(2, 2)*poc%uv%y
         ! - onSurf%r*onSurf%v*(onSurf%u*poc%uv%x + onSurf%v*poc%uv%y)
 
-        ! if (t_ == 100000) then
-        !   write (*, *) i, poc%force
-        ! end if
-      end associate
-    end do
-
-    do i = 1, size(ptOnBar)
-      associate (pob => ptOnBar(i))
-
-        do iRD = 1, pob%noOfRD
-
-          dataPt1%x = pob%n3(iRD)%b(1)%x
-          dataPt1%y = pob%n3(iRD)%b(1)%y
-          dataPt2%x = pob%n3(iRD)%b(2)%x
-          dataPt2%y = pob%n3(iRD)%b(2)%y
-          dataPt%x = pob%n3(iRD)%x
-          dataPt%y = pob%n3(iRD)%y
-          do a = 0, q - 1
-            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
-            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
-            call linearExtInt(dataPt1, dataPt2, dataPt)
-            tmpA(a) = dataPt%z
-          end do
-          call calcStressTensor2(tmpA, sigma)
-          pob%n3(iRD)%st = sigma
-
-          dataPt1%x = pob%n2(iRD)%b(1)%x
-          dataPt1%y = pob%n2(iRD)%b(1)%y
-          dataPt2%x = pob%n2(iRD)%b(2)%x
-          dataPt2%y = pob%n2(iRD)%b(2)%y
-          dataPt%x = pob%n2(iRD)%x
-          dataPt%y = pob%n2(iRD)%y
-          do a = 0, q - 1
-            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
-            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
-            call linearExtInt(dataPt1, dataPt2, dataPt)
-            tmpA(a) = dataPt%z
-          end do
-          call calcStressTensor2(tmpA, sigma)
-          pob%n2(iRD)%st = sigma
-
-          call calcStressTensor2(f(:, int(pob%n1(iRD)%x), int(pob%n1(iRD)%y)), sigma)
-          pob%n1(iRD)%st = sigma
-
-          dataPt3%x = pob%n3(iRD)%x
-          dataPt3%y = pob%n3(iRD)%y
-          dataPt2%x = pob%n2(iRD)%x
-          dataPt2%y = pob%n2(iRD)%y
-          dataPt1%x = pob%n1(iRD)%x
-          dataPt1%y = pob%n1(iRD)%y
-          dataPt%x = pob%n0(iRD)%x
-          dataPt%y = pob%n0(iRD)%y
-          do k = 1, 2
-            do p = 1, 2
-              dataPt1%z = pob%n1(iRD)%st(k, p)
-              dataPt2%z = pob%n2(iRD)%st(k, p)
-              dataPt3%z = pob%n3(iRD)%st(k, p)
-              ! call linearExtInt(dataPt1, dataPt2, dataPt)
-              call quadExtInt(dataPt1, dataPt2, dataPt3, dataPt)
-              pob%n0(iRD)%st(k, p) = dataPt%z
-            end do
-          end do
-
-        end do
-
-        do k = 1, 2
-          do p = 1, 2
-            avgST(k, p) = sum(pob%n0(1:pob%noOfRD)%st(k, p))/pob%noOfRD
-          end do
-        end do
-
-        pob%force%x = avgST(1, 1)*pob%uv%x + avgST(1, 2)*pob%uv%y
-        pob%force%y = avgST(2, 1)*pob%uv%x + avgST(2, 2)*pob%uv%y
-
-        ! if (t_ == 100000) then
-        !   write (*, *) i, pob%force
-        ! end if
+        if (t_ == 100000) then
+          write (*, *) i, poc%force
+        end if
       end associate
     end do
 
@@ -732,68 +662,31 @@ program cyl
     ! stop
 
     do k = 1, noOfPtOnCircle
-      forceXCir(k) = ptOnCircle(k)%force%x
-      forceYCir(k) = ptOnCircle(k)%force%y
-    end do
-
-    do k = 1, noOfPtOnBar
-      forceXBar(k) = ptOnBar(k)%force%x
-      forceYBar(k) = ptOnBar(k)%force%y
+      forceX(k) = ptOnCircle(k)%force%x
+      forceY(k) = ptOnCircle(k)%force%y
     end do
     ! write (*, *) forceX
-    ! totalForceCir%x = trapIntegrate(forceXCir)
-    ! totalForceCir%y = trapIntegrate(forceYCir)
-    totalForceCir%x = sum(forceXCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
-    totalForceCir%y = sum(forceYCir)*(2*pi - 2*arcSkip)*haf*dia_/noOfPtOnCircle
+    totalForce%x = trapIntegrate(forceX)
+    totalForce%y = trapIntegrate(forceY)
 
-    totalForceBar%x = sum(forceXBar(1:576))*(2*barL_ + barH_)/(noOfPtOnBar - 16)
-    totalForceBar%y = sum(forceYBar(1:576))*(2*barL_ + barH_)/(noOfPtOnBar - 16)
-
-    ! if (t_ == 100000) then
-    !   write (*, *) '======================================'
-    !   write (*, *) totalForce%x, sum(forceX)
-    !   write (*, *) 0.5*rhoF_*uMean_*uMean_*dia_
-    ! end if
-
-    if (mod(t_, 500) == 0) then
-      do i = 71, 74
-        associate (pob => ptOnBar(i))
-          iRD = 1
-          dataPt1%x = pob%n2(iRD)%x
-          dataPt1%y = pob%n2(iRD)%y
-          dataPt2%x = pob%n1(iRD)%x
-          dataPt2%y = pob%n1(iRD)%y
-          dataPt%x = pob%n0(iRD)%x
-          dataPt%y = pob%n0(iRD)%y
-          do a = 0, q - 1
-            dataPt1%z = f(a, int(dataPt1%x), int(dataPt1%y))
-            dataPt2%z = f(a, int(dataPt2%x), int(dataPt2%y))
-            call linearExtInt(dataPt1, dataPt2, dataPt)
-            tmpA(a) = dataPt%z
-          end do
-          lbmVarA(i) = macroVar(tmpA)
-        end associate
-      end do
-      write (*, '(I10,4(F8.4))') t_, lbmVarA(71)%r, lbmVarA(72)%r, lbmVarA(73)%r, lbmVarA(74)%r
+    if (t_ == 100000) then
+      write (*, *) '======================================'
+      write (*, *) totalForce%x, sum(forceX)
+      write (*, *) 0.5*rhoF_*uMean_*uMean_*dia_
     end if
 
 !=================working================================
     fx_t = 0.5*(fx(1) + fx(2))
     fy_t = 0.5*(fy(1) + fy(2))
-    Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cd2 = (totalForceCir%x + totalForceBar%x)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cd2 = (totalForceBar%x)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    Cl2 = (totalForcecir%y + totalForceBar%y)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cl2 = (totalForceBar%y)*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
-
-    ! Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
-    ! Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cd = fx_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    ! Cl = fy_t*CFor!/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cd = fx_t/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cd2 = totalForce%x/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cl = fy_t/(0.5*rhoF_*uMean_*uMean_*dia_)
+    Cl2 = totalForce%y/(0.5*rhoF_*uMean_*uMean_*dia_)
 !----------------------------------------------------------------------
     if (mod(t_, dispFreq) .eq. 0) then
-      write (10, '(E16.6,2X,I10,7(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
+      write (10, '(E16.6,2X,I10,7(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2, fxx, ptOnCircle(101)%force%x
       ! write (*, '(E16.6,2X,I10,5(2X,E12.4))') t, t_, rhoSum, Cd, Cl, Cd2, Cl2
       !write (*, '(I8,4(3X,F10.6))') ts, ts*Ct, rhoAvg, Cd, Cl
 
@@ -966,15 +859,12 @@ contains
     integer::i, a, k, outDir(3), xConst, yConst!, itmp(1)
     allocate (ptOnCircle(noOfPts))
 
-    theta0 = d0 + arcSkip
-    dTheta = (2*pi - 2*arcSkip)/noOfPts
-
-    ! theta0 = d0
-    ! dTheta = (2*pi)/noOfPts
+    theta0 = d0
+    dTheta = 2*pi/noOfPts
 
     do i = 0, noOfPts - 1
       associate (poc => ptOnCircle(i + 1))
-        theta = theta0 + (i + haf)*dTheta
+        theta = theta0 + i*dTheta
         poc%n0(:)%x = xc_ + 0.5*dia_*cos(theta)
         poc%n0(:)%y = yc_ + 0.5*dia_*sin(theta)
 
@@ -1000,11 +890,11 @@ contains
 
         poc%noOfRD = 0
         do a = 1, 4
-          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
-          if (dirDotUnitVec(a) .gt. d0) then
+          if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
+            ! if (dirDotUnitVec(a) .gt. d0) then
             poc%noOfRD = poc%noOfRD + 1
             outDir(poc%noOfRD) = a
-            ! exit
+            exit
           end if
         end do
 
@@ -1081,230 +971,6 @@ contains
     end do
 
   end subroutine createDataStructOnCircle
-
-  pure subroutine createDSonBar(noOfPtOnBar, ptOnBar)
-    integer, intent(in)::noOfPtOnBar
-    type(custom_t), allocatable, dimension(:), intent(out) :: ptOnBar
-    type(doublet_t):: startPtOnBar, dir
-    type(doubletInt_t)::locBox(4)
-    double precision::dirDotUnitVec(4)
-    double precision:: x0, x1, y0, y1, a1, b1, c1, a2, b2, c2, determinant
-    double precision:: x_xConst, y_xConst, x_yConst, y_yConst
-    double precision:: x_xConst2, y_xConst2, x_yConst2, y_yConst2
-    double precision:: dist_xConst, dist_yConst, dist_xConst2, dist_yConst2
-    integer::i, a, k, outDir(3), xConst, yConst, xConst2, yConst2!, itmp(1)
-    double precision:: ds, arcLen, leftOverDist, min2ndDist
-
-    allocate (ptOnBar(noOfPtOnBar))
-
-    startPtOnBar%x = xc_ + haf*dia_
-    startPtOnBar%y = yc_ - haf*barH_
-    ds = (d2*barL_ + d2*barH_)/noOfPtOnBar
-
-    ! xFlag = 1
-    ! yFlag = 0
-    arcLen = d0
-
-    do i = 0, noOfPtOnBar - 1
-      associate (pob => ptOnBar(i + 1))
-        arcLen = (i + haf)*ds
-
-        if (arcLen .lt. barL_) then
-          pob%n0(:)%x = startPtOnBar%x + arcLen
-          pob%n0(:)%y = startPtOnBar%y
-          pob%uv%x = 0.0d0
-          pob%uv%y = -1.0d0
-        elseif (arcLen .lt. (barL_ + barH_)) then
-          pob%n0(:)%x = startPtOnBar%x + barL_
-          pob%n0(:)%y = startPtOnBar%y + arcLen - barL_
-          pob%uv%x = 1.0d0
-          pob%uv%y = 0.0d0
-        elseif (arcLen .lt. (d2*barL_ + barH_)) then
-          pob%n0(:)%x = startPtOnBar%x + (2*barL_ + barH_ - arcLen)
-          pob%n0(:)%y = startPtOnBar%y + barH_
-          pob%uv%x = 0.0d0
-          pob%uv%y = 1.0d0
-        else
-          pob%n0(:)%x = startPtOnBar%x
-          pob%n0(:)%y = startPtOnBar%y + arcLen - (d2*barL_ + barH_)
-          pob%uv%x = -1.0d0
-          pob%uv%y = 0.0d0
-        end if
-        ! write (*, '(I4,5(F10.4))') (i + 1), arcLen, pob%n0(1)%x, pob%n0(1)%y, pob%uv%x, pob%uv%y
-
-        locBox(1)%x = ceiling(pob%n0(1)%x)
-        locBox(2)%x = ceiling(pob%n0(1)%x)
-        locBox(3)%x = floor(pob%n0(1)%x)
-        locBox(4)%x = floor(pob%n0(1)%x)
-
-        locBox(1)%y = floor(pob%n0(1)%y)
-        locBox(2)%y = ceiling(pob%n0(1)%y)
-        locBox(3)%y = ceiling(pob%n0(1)%y)
-        locBox(4)%y = floor(pob%n0(1)%y)
-
-        do a = 1, 4
-          dir%x = locBox(a)%x - pob%n0(1)%x
-          dir%y = locBox(a)%y - pob%n0(1)%y
-          dirDotUnitVec(a) = (dir%x*pob%uv%x + dir%y*pob%uv%y) &
-                             /(sqrt(dir%x**d2 + dir%y**d2))
-        end do
-
-        pob%noOfRD = 0
-        do a = 1, 4
-          ! if (dirDotUnitVec(a) .eq. maxval(dirDotUnitVec)) then
-          if (dirDotUnitVec(a) .gt. d0) then
-            pob%noOfRD = pob%noOfRD + 1
-            outDir(pob%noOfRD) = a
-            ! exit
-          end if
-        end do
-
-        ! itmp = maxloc(dirDotUnitVec)
-        ! outDir = itmp(1)
-        do k = 1, pob%noOfRD
-          dir%x = locBox(outDir(k))%x - pob%n0(k)%x
-          dir%y = locBox(outDir(k))%y - pob%n0(k)%y
-
-          pob%n1(k)%x = locBox(outDir(k))%x
-          pob%n1(k)%y = locBox(outDir(k))%y
-          ! write (*, *) outDir, pob%n1(1)%x, pob%n1(1)%y
-
-          xConst = int(pob%n1(k)%x) + int(sign(d1, dir%x))
-          yconst = int(pob%n1(k)%y) + int(sign(d1, dir%y))
-
-          xConst2 = int(pob%n1(k)%x) + 2*int(sign(d1, dir%x))
-          yconst2 = int(pob%n1(k)%y) + 2*int(sign(d1, dir%y))
-
-          x0 = pob%n0(k)%x
-          y0 = pob%n0(k)%y
-          x1 = pob%n1(k)%x
-          y1 = pob%n1(k)%y
-
-          a1 = y1 - y0
-          b1 = -(x1 - x0)
-          c1 = (y1 - y0)*x0 - (x1 - x0)*y0
-
-          a2 = 1.0
-          b2 = 0.0
-          c2 = xConst
-
-          determinant = a1*b2 - a2*b1
-
-          if (abs(determinant) < 0.0001) then
-            x_xConst = xConst
-            y_xConst = 99999
-          else
-            x_xConst = (c1*b2 - c2*b1)/determinant
-            y_xConst = (a1*c2 - a2*c1)/determinant
-          end if
-
-          a2 = 0.0
-          b2 = 1.0
-          c2 = yConst
-
-          determinant = a1*b2 - a2*b1
-
-          if (abs(determinant) < 0.0001) then
-            x_yConst = 99999
-            y_yConst = yConst
-          else
-            x_yConst = (c1*b2 - c2*b1)/determinant
-            y_yConst = (a1*c2 - a2*c1)/determinant
-          end if
-
-          !---------------------
-          a1 = y1 - y0
-          b1 = -(x1 - x0)
-          c1 = (y1 - y0)*x0 - (x1 - x0)*y0
-
-          a2 = 1.0
-          b2 = 0.0
-          c2 = xConst2
-
-          determinant = a1*b2 - a2*b1
-
-          if (abs(determinant) < 0.0001) then
-            x_xConst2 = xConst2
-            y_xConst2 = 99999
-          else
-            x_xConst2 = (c1*b2 - c2*b1)/determinant
-            y_xConst2 = (a1*c2 - a2*c1)/determinant
-          end if
-
-          a2 = 0.0
-          b2 = 1.0
-          c2 = yConst2
-
-          determinant = a1*b2 - a2*b1
-
-          if (abs(determinant) < 0.0001) then
-            x_yConst2 = 99999
-            y_yConst2 = yConst
-          else
-            x_yConst2 = (c1*b2 - c2*b1)/determinant
-            y_yConst2 = (a1*c2 - a2*c1)/determinant
-          end if
-
-          dist_xConst = sqrt((x_xConst - x0)**d2 + (y_xConst - y0)**d2)
-          dist_yConst = sqrt((x_yConst - x0)**d2 + (y_yConst - y0)**d2)
-          dist_xConst2 = sqrt((x_xConst2 - x0)**d2 + (y_xConst2 - y0)**d2)
-          dist_yConst2 = sqrt((x_yConst2 - x0)**d2 + (y_yConst2 - y0)**d2)
-          !---------------------
-          if (dist_xConst <= dist_yConst) then
-            leftOverDist = dist_yConst
-            pob%n2(k)%x = x_xConst
-            pob%n2(k)%y = y_xConst
-            pob%n2(k)%b(1)%x = x_xConst
-            pob%n2(k)%b(1)%y = floor(y_xConst)
-            pob%n2(k)%b(2)%x = x_xConst
-            pob%n2(k)%b(2)%y = ceiling(y_xConst)
-          else
-            leftOverDist = dist_xConst
-            pob%n2(k)%x = x_yConst
-            pob%n2(k)%y = y_yConst
-            pob%n2(k)%b(1)%x = floor(x_yConst)
-            pob%n2(k)%b(1)%y = y_yConst
-            pob%n2(k)%b(2)%x = ceiling(x_yConst)
-            pob%n2(k)%b(2)%y = y_yConst
-          end if
-
-          min2ndDist = min(leftOverDist, dist_xConst2, dist_yConst2)
-          if (min2ndDist .eq. dist_xConst) then
-            pob%n3(k)%x = x_xConst
-            pob%n3(k)%y = y_xConst
-            pob%n3(k)%b(1)%x = x_xConst
-            pob%n3(k)%b(1)%y = floor(y_xConst)
-            pob%n3(k)%b(2)%x = x_xConst
-            pob%n3(k)%b(2)%y = ceiling(y_xConst)
-          elseif (min2ndDist .eq. dist_yConst) then
-            pob%n3(k)%x = x_yConst
-            pob%n3(k)%y = y_yConst
-            pob%n3(k)%b(1)%x = floor(x_yConst)
-            pob%n3(k)%b(1)%y = y_yConst
-            pob%n3(k)%b(2)%x = ceiling(x_yConst)
-            pob%n3(k)%b(2)%y = y_yConst
-          elseif (min2ndDist .eq. dist_xConst2) then
-            pob%n3(k)%x = x_xConst2
-            pob%n3(k)%y = y_xConst2
-            pob%n3(k)%b(1)%x = x_xConst2
-            pob%n3(k)%b(1)%y = floor(y_xConst2)
-            pob%n3(k)%b(2)%x = x_xConst2
-            pob%n3(k)%b(2)%y = ceiling(y_xConst2)
-          elseif (min2ndDist .eq. dist_yConst2) then
-            pob%n3(k)%x = x_yConst2
-            pob%n3(k)%y = y_yConst2
-            pob%n3(k)%b(1)%x = floor(x_yConst2)
-            pob%n3(k)%b(1)%y = y_yConst2
-            pob%n3(k)%b(2)%x = ceiling(x_yConst2)
-            pob%n3(k)%b(2)%y = y_yConst2
-          end if
-
-        end do
-
-      end associate
-    end do
-    ! stop
-  end subroutine createDSonBar
 
   function dateTime()
 
@@ -1392,37 +1058,6 @@ contains
     pt%z = pt1%z + x0x1*(pt2%z - pt1%z)/x2x1
 
   end subroutine linearExtInt
-
-  pure subroutine quadExtInt(pt1, pt2, pt3, ptAsk)
-    ! double precision, intent(in) :: x, y
-    type(triplet_t), intent(in) :: pt1, pt2, pt3
-    type(triplet_t), intent(inout) :: ptAsk
-    type(triplet_t) :: pt(0:2)
-    double precision:: xAsk, x(0:2), sum, prod(0:2)
-    integer:: i, j, m
-
-    pt(0) = pt1
-    pt(1) = pt2
-    pt(2) = pt3
-
-    xAsk = sqrt(ptAsk%x**d2 + ptAsk%y**d2)
-    do i = 0, 2
-      x(i) = sqrt(pt(i)%x**d2 + pt(i)%y**d2)
-    end do
-
-    sum = d0
-    do j = 0, 2
-      prod(j) = d1
-      do m = 0, 2
-        if (m == j) cycle
-        prod(j) = prod(j)*(xAsk - x(m))/(x(j) - x(m))
-      end do
-      sum = sum + pt(j)%z*prod(j)
-    end do
-
-    ptAsk%z = sum
-
-  end subroutine quadExtInt
 
   ! pure subroutine bilinearInterp(pt, box, err)
   !   type(triplet_t), intent(inout) :: pt
